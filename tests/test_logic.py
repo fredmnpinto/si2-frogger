@@ -1,7 +1,14 @@
+__author__ = "Mário Antunes"
+__version__ = "1.1.0"
+__email__ = "mario.antunes@ua.pt"
+__status__ = "Development"
+
 import unittest
 from server.logic import Frogger
 
 class TestFroggerLogic(unittest.TestCase):
+    game: Frogger # pyright: ignore[reportUninitializedInstanceVariable]
+
     def setUp(self):
         self.game = Frogger(width=11, height=9)
 

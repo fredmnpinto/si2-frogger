@@ -1,8 +1,13 @@
+__author__ = "Mário Antunes"
+__version__ = "1.1.0"
+__email__ = "mario.antunes@ua.pt"
+__status__ = "Development"
+
 import logging
 from typing import Dict, Any, Optional
 
 import aigf.interface as interface
-import server.logic as logic
+from . import logic
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - FROGGER - %(levelname)s - %(message)s")
 
@@ -64,6 +69,21 @@ class FroggerGameServer(interface.GameInterface):
     def get_state(self) -> Dict[str, Any]:
         state = self.game.get_state()
         state["player_id"] = self.player_id
+        
+        # Calculate valid actions for the current state
+        valid_actions = []
+        if not self.game.game_over:
+            if self.game.frog_y < self.game.height - 1:
+                valid_actions.append("NORTH")
+            if self.game.frog_y > 0:
+                valid_actions.append("SOUTH")
+            if self.game.frog_x > 0:
+                valid_actions.append("WEST")
+            if self.game.frog_x < self.game.width - 1:
+                valid_actions.append("EAST")
+        
+        state["actions"] = valid_actions
+        state["valid_actions"] = valid_actions
         return state
 
     def get_setup_payload(self) -> Dict[str, Any]:
