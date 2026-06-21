@@ -9,6 +9,7 @@ This module provides:
 from __future__ import annotations
 
 import copy
+import dataclasses
 from dataclasses import dataclass
 from typing import Optional
 
@@ -16,7 +17,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from models.dqn_network import DQNNetwork, STATE_DIM
+from models.dqn_network import DQNNetwork, NUM_ACTIONS, STATE_DIM
 from training.replay_buffer import ReplayBuffer
 
 
@@ -148,6 +149,8 @@ class DQNTrainer:
         Returns:
             Epsilon value in ``[epsilon_end, epsilon_start]``.
         """
+        if self.config.epsilon_decay_steps <= 0:
+            return self.config.epsilon_end
         if step >= self.config.epsilon_decay_steps:
             return self.config.epsilon_end
         slope = (
@@ -169,7 +172,7 @@ class DQNTrainer:
             Selected action index in ``[0, NUM_ACTIONS)``.
         """
         if torch.rand(1).item() < epsilon:
-            return torch.randint(0, 4, (1,)).item()
+            return torch.randint(0, NUM_ACTIONS, (1,)).item()
 
         with torch.no_grad():
             q_values = self.policy_net(state.unsqueeze(0).to(self.device))
@@ -254,3 +257,54 @@ class DQNTrainer:
         self.update_target_network()
 
         return float(loss.item())
+
+    def save_checkpoint(self, path: str, episode: int, epsilon: float, best_score: float) -> None:
+        """Save the trainer state to a checkpoint file.
+
+        Args:
+            path: File path to save the checkpoint.
+            episode: Current training episode number.
+            epsilon: Current epsilon value for exploration.
+            best_score: Best evaluation score achieved so far.
+        """
+        checkpoint = {
+            "policy_state_dict": self.policy_net.state_dict(),
+            "target_state_dict": self.target_net.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "step_count": self.step_count,
+            "episode": episode,
+            "epsilon": epsilon,
+            "best_score": best_score,
+            "config": dataclasses.asdict(self.config),
+        }
+        checkpoint["config"]["device"] = str(self.device)
+        torch.save(checkpoint, path)
+
+    def load_checkpoint(self, path: str) -> dict:
+        """Load trainer state from a checkpoint file.
+
+        Args:
+            path: File path to the checkpoint.
+
+        Returns:
+            Dictionary containing metadata (episode, epsilon, best_score).
+
+        Raises:
+            FileNotFoundError: If the checkpoint file does not exist.
+            RuntimeError: If the checkpoint is corrupted or incompatible.
+        """
+        if not path or not isinstance(path, str):
+            raise ValueError("Checkpoint path must be a non-empty string.")
+
+        checkpoint = torch.load(path, map_location=self.device, weights_only=True)
+
+        self.policy_net.load_state_dict(checkpoint["policy_state_dict"])
+        self.target_net.load_state_dict(checkpoint["target_state_dict"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self.step_count = checkpoint.get("step_count", 0)
+
+        return {
+            "episode": checkpoint.get("episode", 0),
+            "epsilon": checkpoint.get("epsilon", self.config.epsilon_start),
+            "best_score": checkpoint.get("best_score", float("-inf")),
+        }

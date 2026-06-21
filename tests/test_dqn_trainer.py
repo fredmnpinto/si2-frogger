@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -66,6 +68,14 @@ class TestEpsilonDecay(unittest.TestCase):
         trainer = DQNTrainer()
         eps = trainer.get_epsilon(trainer.config.epsilon_decay_steps)
         self.assertAlmostEqual(eps, 0.01)
+
+    def test_zero_decay_steps_returns_epsilon_end(self):
+        config = DQNConfig(epsilon_decay_steps=0)
+        trainer = DQNTrainer(config)
+        eps = trainer.get_epsilon(0)
+        self.assertAlmostEqual(eps, config.epsilon_end)
+        eps = trainer.get_epsilon(100)
+        self.assertAlmostEqual(eps, config.epsilon_end)
 
     def test_past_end_value(self):
         trainer = DQNTrainer()
@@ -285,6 +295,66 @@ class TestTrainingStep(unittest.TestCase):
         self.assertIsNotNone(loss1)
         self.assertIsNotNone(loss2)
         self.assertNotEqual(loss1, loss2)
+
+
+class TestCheckpointSaveLoad(unittest.TestCase):
+    """Tests for checkpoint save and load functionality."""
+
+    def test_save_checkpoint_creates_file(self):
+        trainer = DQNTrainer()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "checkpoint.pt")
+            trainer.save_checkpoint(path, episode=10, epsilon=0.5, best_score=100.0)
+            self.assertTrue(os.path.isfile(path))
+
+    def test_save_and_load_restores_networks(self):
+        config = DQNConfig(hidden_size=64)
+        trainer1 = DQNTrainer(config)
+        # Set known weights
+        with torch.no_grad():
+            for p in trainer1.policy_net.parameters():
+                p.fill_(0.42)
+            for p in trainer1.target_net.parameters():
+                p.fill_(0.99)
+        trainer1.step_count = 123
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "checkpoint.pt")
+            trainer1.save_checkpoint(path, episode=5, epsilon=0.3, best_score=50.0)
+
+            trainer2 = DQNTrainer(config)
+            meta = trainer2.load_checkpoint(path)
+
+        # Networks restored
+        for p in trainer2.policy_net.parameters():
+            self.assertAlmostEqual(p.mean().item(), 0.42, places=5)
+        for p in trainer2.target_net.parameters():
+            self.assertAlmostEqual(p.mean().item(), 0.99, places=5)
+        self.assertEqual(trainer2.step_count, 123)
+        self.assertEqual(meta["episode"], 5)
+        self.assertAlmostEqual(meta["epsilon"], 0.3)
+        self.assertAlmostEqual(meta["best_score"], 50.0)
+
+    def test_load_missing_file_raises(self):
+        trainer = DQNTrainer()
+        with self.assertRaises(FileNotFoundError):
+            trainer.load_checkpoint("/nonexistent/path/checkpoint.pt")
+
+    def test_load_invalid_path_raises(self):
+        trainer = DQNTrainer()
+        with self.assertRaises(ValueError):
+            trainer.load_checkpoint("")
+        with self.assertRaises(ValueError):
+            trainer.load_checkpoint(None)  # type: ignore[arg-type]
+
+    def test_checkpoint_contains_config(self):
+        trainer = DQNTrainer(DQNConfig(learning_rate=0.005))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "checkpoint.pt")
+            trainer.save_checkpoint(path, episode=1, epsilon=1.0, best_score=0.0)
+            checkpoint = torch.load(path, weights_only=True)
+            self.assertIn("config", checkpoint)
+            self.assertEqual(checkpoint["config"]["learning_rate"], 0.005)
 
 
 if __name__ == "__main__":
