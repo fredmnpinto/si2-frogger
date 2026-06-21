@@ -1,10 +1,12 @@
 # SI2-Frogger DQN Agent Functional Specification
 
-> **Version**: 2.1.0 | **Date**: 2026-06-20 | **Author**: Documenter Agent | **Status**: Draft
+> **Version**: 2.1.2 | **Date**: 2026-06-21 | **Author**: Documenter Agent | **Status**: Draft
 
 ## Change Log
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.1.2 | 2026-06-21 | Documenter Agent | FR-003 (Training Orchestration) marked as Implemented. TrainingOrchestrator with episode loop, tqdm progress bar, CheckpointManager with periodic saves/best model tracking/emergency recovery, TrainingLogger with console+CSV logging, TrainingConfig with CLI parser and JSON config support, visualization/plot.py with 4 plot types, DQNTrainer save/load checkpoint methods, CLI entry points, SIGINT handling, NaN/Inf detection. 176 tests passing, 99% coverage. Commit: `9d20902`. |
+| 2.1.1 | 2026-06-20 | Documenter Agent | FR-001 (Environment Wrapper) marked as Implemented. `env/__init__.py` and `env/frogger_env.py` created with `FroggerEnv` class wrapping `server.logic.Frogger`. All acceptance criteria checked off. 29 unit tests, 98% coverage. Commit: `4f5e292`. |
 | 2.1.0 | 2026-06-20 | Documenter Agent | Fixed granularity: consolidated 14 sub-function FRs into 6 User Goal-level FRs per IREB best practices. Moved state representation, reward function, and network architecture design decisions to Architecture section. Acceptance criteria now carry sub-function detail. |
 | 2.0.0 | 2026-06-20 | Documenter Agent | Complete rewrite: shifted focus from game server to DQN agent/training system. Previous spec (v1.0.0) documented the existing game implementation which is out of scope for this project. |
 
@@ -92,9 +94,9 @@ The project delivers a complete DQN-based RL system:
 
 | ID | Title | Description | Priority (Must/Should/Could) | Source | Dependencies | Status |
 |----|-------|-------------|-------------------------------|--------|--------------|--------|
-| FR-001 | Environment Wrapper | The system shall provide a Gym-like wrapper around Frogger logic exposing reset(), step(), state extraction, reward computation, and cooldown handling | Must | project02.md, codebase | None | Draft |
+| FR-001 | Environment Wrapper | The system shall provide a Gym-like wrapper around Frogger logic exposing reset(), step(), state extraction, reward computation, and cooldown handling | Must | project02.md, codebase | None | Implemented |
 | FR-002 | DQN Training System | The system shall implement a complete DQN algorithm including neural network, experience replay, epsilon-greedy exploration, target network updates, loss computation, and optimizer | Must | project02.md, DQN paper | FR-001 | Draft |
-| FR-003 | Training Orchestration | The system shall run a training loop over N episodes with logging, checkpointing, and visualization | Must | project02.md | FR-002 | Draft |
+| FR-003 | Training Orchestration | The system shall run a training loop over N episodes with logging, checkpointing, and visualization | Must | project02.md | FR-002 | Implemented |
 | FR-004 | Inference Agent | The system shall provide a DQNAgent subclassing BaseAgent that loads trained weights and plays via WebSocket | Must | project02.md, codebase | FR-003 | Draft |
 | FR-005 | Evaluation and Benchmarking | The system shall evaluate trained agents over multiple episodes and compute statistics vs DummyAgent baseline | Must | project02.md | FR-004 | Draft |
 | FR-006 | Hyperparameter Configuration | The system shall expose all hyperparameters via config file or CLI | Should | project02.md | FR-003 | Draft |
@@ -102,18 +104,18 @@ The project delivers a complete DQN-based RL system:
 ### Acceptance Criteria
 
 #### FR-001: Environment Wrapper
-**Description**: The system shall provide a Gym-like wrapper around `server/logic.Frogger` exposing `reset()`, `step()`, state extraction, reward computation, and cooldown handling.
+**Description**: The system shall provide a Gym-like wrapper around `server.logic.Frogger` exposing `reset()`, `step()`, state extraction, reward computation, and cooldown handling.
 **Priority**: Must
 **Source**: project02.md, codebase
 **Dependencies**: None
 **Acceptance Criteria**:
-- [ ] `FroggerEnv` class wraps `server.logic.Frogger` without modifying `logic.py`
-- [ ] `reset()` returns initial state and resets the underlying `Frogger` game
-- [ ] `step(action)` accepts action string ("NORTH", "SOUTH", "EAST", "WEST"), advances game by one or more ticks, and returns `(next_state, reward, done, info)`
-- [ ] `step()` handles the 5-frame movement cooldown by either stepping multiple ticks or waiting appropriately
-- [ ] Environment tracks episode length and exposes it in `info`
-- [ ] Environment is deterministic when seeded
-**Status**: Draft
+- [x] `FroggerEnv` class wraps `server.logic.Frogger` without modifying `logic.py`
+- [x] `reset()` returns initial state and resets the underlying `Frogger` game
+- [x] `step(action)` accepts action string ("NORTH", "SOUTH", "EAST", "WEST"), advances game by one or more ticks, and returns `(next_state, reward, done, info)`
+- [x] `step()` handles the 5-frame movement cooldown by either stepping multiple ticks or waiting appropriately
+- [x] Environment tracks episode length and exposes it in `info`
+- [x] Environment is deterministic when seeded
+**Status**: Implemented
 
 #### FR-002: DQN Training System
 **Description**: The system shall implement a complete DQN algorithm including neural network architecture (PyTorch), experience replay buffer, epsilon-greedy exploration with decay, target network updates, loss computation (Huber/MSE), and Adam optimizer.
@@ -144,22 +146,22 @@ The project delivers a complete DQN-based RL system:
 **Source**: project02.md
 **Dependencies**: FR-002
 **Acceptance Criteria**:
-- [ ] Training script runs for configurable number of episodes (default: 1,000+)
-- [ ] Each episode: reset env, run until done, accumulate transitions, perform training updates
-- [ ] Logs include: episode number, total reward, epsilon, loss, episode length, high score
-- [ ] Logs are written to console and optionally to file (CSV or JSON)
-- [ ] Model weights saved every N episodes (configurable, default: every 100)
-- [ ] Best model (highest evaluation score) is saved separately and never overwritten
-- [ ] Checkpoint includes: policy network state dict, target network state dict, optimizer state dict, episode count, epsilon value, best score
-- [ ] Checkpoints are saved to `checkpoints/` directory with descriptive filenames
-- [ ] Checkpoint loading restores full training state for resumption
-- [ ] Plot 1: Episode rewards over time (smoothed with moving average)
-- [ ] Plot 2: Loss curve over training steps
-- [ ] Plot 3: Epsilon decay over episodes
-- [ ] Plot 4: Evaluation score distribution (histogram or boxplot)
-- [ ] Plots are saved as PNG/SVG to `plots/` or `results/` directory
-- [ ] Plot generation script is separate and can be run post-training
-**Status**: Draft
+- [x] Training script runs for configurable number of episodes (default: 1,000+)
+- [x] Each episode: reset env, run until done, accumulate transitions, perform training updates
+- [x] Logs include: episode number, total reward, epsilon, loss, episode length, high score
+- [x] Logs are written to console and optionally to file (CSV or JSON)
+- [x] Model weights saved every N episodes (configurable, default: every 100)
+- [x] Best model (highest evaluation score) is saved separately and never overwritten
+- [x] Checkpoint includes: policy network state dict, target network state dict, optimizer state dict, episode count, epsilon value, best score
+- [x] Checkpoints are saved to `checkpoints/` directory with descriptive filenames
+- [x] Checkpoint loading restores full training state for resumption
+- [x] Plot 1: Episode rewards over time (smoothed with moving average)
+- [x] Plot 2: Loss curve over training steps
+- [x] Plot 3: Epsilon decay over episodes
+- [x] Plot 4: Evaluation score distribution (histogram or boxplot)
+- [x] Plots are saved as PNG/SVG to `plots/` or `results/` directory
+- [x] Plot generation script is separate and can be run post-training
+**Status**: Implemented
 
 #### FR-004: Inference Agent
 **Description**: The system shall provide a `DQNAgent` subclassing `BaseAgent` that loads trained weights and plays via WebSocket.
