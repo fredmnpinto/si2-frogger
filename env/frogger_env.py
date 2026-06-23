@@ -82,6 +82,8 @@ class FroggerEnv:
         self._prev_frog_y = 0
         self._prev_frog_x = 0.0
         self._max_y_reached = 0
+        self._laps_completed = 0
+        self._steps_at_lap_start = 0
 
         self.reward_forward = reward_forward
         self.reward_checkpoint = reward_checkpoint
@@ -139,6 +141,8 @@ class FroggerEnv:
         self._prev_frog_y = self.game.frog_y
         self._prev_frog_x = self.game.frog_x
         self._max_y_reached = 0
+        self._laps_completed = 0
+        self._steps_at_lap_start = 0
         return self.game.get_state()
 
     def _get_info(self) -> Dict[str, Any]:
@@ -148,6 +152,7 @@ class FroggerEnv:
             "lives": self.game.lives,
             "score": self.game.score,
             "laps": self.game.laps,
+            "laps_completed": self._laps_completed,
             "high_score": self.game.high_score,
             "game_over": self.game.game_over,
             "win": self.game.win,
@@ -221,6 +226,10 @@ class FroggerEnv:
 
         # One final update --------------------------------------------------
         self.game.update(self._dt)
+
+        # Check if lap completed (frog reached y=8 and reset to y=0)
+        if self.game.frog_y == 0 and self._prev_frog_y > 0 and self.game.laps > prev_laps:
+            self._laps_completed += 1
 
         # Compute reward ----------------------------------------------------
         reward = self._compute_reward(

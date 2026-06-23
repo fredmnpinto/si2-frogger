@@ -57,6 +57,9 @@ class TrainingOrchestrator:
 
         self._episode = 0
         self._best_score = float("-inf")
+        self._best_laps = 0
+        self._best_steps = 0
+        self._best_steps_per_lap = float("inf")  # Lower is better
         self._interrupted = False
         self._emergency_saved = False
 
@@ -111,11 +114,12 @@ class TrainingOrchestrator:
         """
         return self.trainer.get_epsilon(self.trainer.step_count)
 
-    def _run_episode(self) -> tuple[float, int, Optional[float], int]:
+    def _run_episode(self) -> tuple[float, int, Optional[float], int, int, float]:
         """Run a single training episode.
 
         Returns:
-            Tuple of ``(total_reward, episode_length, average_loss, max_y)``.
+            Tuple of ``(total_reward, episode_length, average_loss, max_y,
+            laps_completed, steps_per_lap)``.
         """
         state = self.env.reset()
         state_tensor = self.encoder.encode(state).to(self.trainer.device)
@@ -125,6 +129,8 @@ class TrainingOrchestrator:
         steps = 0
         max_steps = 500
         max_y = 0
+        laps_completed = 0
+        steps_at_lap_start = 0
 
         while not done and steps < max_steps:
             epsilon = self._get_current_epsilon()
@@ -132,6 +138,12 @@ class TrainingOrchestrator:
             next_state, reward, done, info = self.env.step(action)
             if info.get("max_y_reached", 0) > max_y:
                 max_y = info["max_y_reached"]
+
+            # Track lap completion
+            if info.get("laps_completed", 0) > laps_completed:
+                laps_completed = info["laps_completed"]
+                steps_at_lap_start = steps
+
             next_state_tensor = self.encoder.encode(next_state).to(self.trainer.device)
 
             self.trainer.replay_buffer.push(
@@ -156,7 +168,8 @@ class TrainingOrchestrator:
             done = True
 
         avg_loss = sum(episode_losses) / len(episode_losses) if episode_losses else None
-        return total_reward, steps, avg_loss, max_y
+        steps_per_lap = steps / laps_completed if laps_completed > 0 else 0.0
+        return total_reward, steps, avg_loss, max_y, laps_completed, steps_per_lap
 
     def _evaluate(self) -> float:
         """Run an evaluation over multiple episodes with epsilon=0.
@@ -224,17 +237,46 @@ class TrainingOrchestrator:
 
             for episode in pbar:
                 self._episode = episode
-                total_reward, length, loss, max_y = self._run_episode()
+                total_reward, length, loss, max_y, laps, steps_per_lap = self._run_episode()
 
+                # Check if new best
+                if total_reward > self._best_score:
+                    prev_best_score = self._best_score
+                    prev_best_laps = self._best_laps
+                    prev_best_steps = self._best_steps
+                    prev_best_steps_per_lap = self._best_steps_per_lap
+
+                    self._best_score = total_reward
+                    self._best_laps = laps
+                    self._best_steps = length
+                    self._best_steps_per_lap = steps_per_lap
+
+                    # Log the new best!
+                    if self.logger is not None:
+                        self.logger.log_new_best(
+                            episode=episode,
+                            score=total_reward,
+                            laps=laps,
+                            total_steps=length,
+                            steps_per_lap=steps_per_lap,
+                            prev_best_score=prev_best_score,
+                            prev_best_laps=prev_best_laps,
+                            prev_best_steps=prev_best_steps,
+                            prev_best_steps_per_lap=prev_best_steps_per_lap,
+                        )
+
+                # Still log to CSV for plotting
+                self.logger.log_episode(
+                    episode, total_reward, self._get_current_epsilon(), loss, length, max_y
+                )
+
+                # Update tqdm postfix
                 pbar.set_postfix(
                     reward=f"{total_reward:.1f}",
                     eps=f"{self._get_current_epsilon():.3f}",
                     best=f"{self._best_score:.1f}",
                     max_y=max_y,
-                )
-
-                self.logger.log_episode(
-                    episode, total_reward, self._get_current_epsilon(), loss, length, max_y
+                    laps=laps,
                 )
 
                 # Periodic checkpoint

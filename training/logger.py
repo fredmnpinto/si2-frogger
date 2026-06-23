@@ -16,6 +16,22 @@ from typing import Optional, TextIO
 from tqdm import tqdm
 
 
+def _calc_pct(improvement: float, baseline: float) -> str:
+    """Calculate improvement percentage string.
+
+    Args:
+        improvement: The absolute improvement value.
+        baseline: The previous best value to compare against.
+
+    Returns:
+        Formatted percentage string (e.g., "+58%", "-22%", "+∞%").
+    """
+    if baseline == float("-inf") or baseline == float("inf") or baseline == 0:
+        return "+∞%"
+    pct = improvement / abs(baseline) * 100
+    return f"{pct:+.0f}%"
+
+
 class TrainingLogger:
     """Logger that writes training metrics to console and CSV file.
 
@@ -102,6 +118,63 @@ class TrainingLogger:
             )
             if self._csv_file is not None:
                 self._csv_file.flush()
+
+    def log_new_best(
+        self,
+        episode: int,
+        score: float,
+        laps: int,
+        total_steps: int,
+        steps_per_lap: float,
+        prev_best_score: float,
+        prev_best_laps: int,
+        prev_best_steps: int,
+        prev_best_steps_per_lap: float,
+    ) -> None:
+        """Log a new best episode achievement with improvements for all metrics.
+
+        Args:
+            episode: Episode number where the new best was achieved.
+            score: Total reward for the episode.
+            laps: Number of laps completed in the episode.
+            total_steps: Total number of steps in the episode.
+            steps_per_lap: Average steps per lap.
+            prev_best_score: Previous best score before this episode.
+            prev_best_laps: Previous best laps before this episode.
+            prev_best_steps: Previous best steps before this episode.
+            prev_best_steps_per_lap: Previous best steps per lap before this episode.
+        """
+        # Score improvement (higher is better)
+        score_imp = score - prev_best_score
+        score_imp_pct = _calc_pct(score_imp, prev_best_score)
+
+        # Laps improvement (higher is better)
+        laps_imp = laps - prev_best_laps
+        laps_imp_pct = _calc_pct(laps_imp, prev_best_laps)
+
+        # Steps improvement (lower is better, negative = improvement)
+        steps_imp = total_steps - prev_best_steps
+        steps_imp_pct = _calc_pct(steps_imp, prev_best_steps)
+
+        # Steps per lap improvement (lower is better, negative = improvement)
+        spl_imp = steps_per_lap - prev_best_steps_per_lap
+        spl_imp_pct = _calc_pct(spl_imp, prev_best_steps_per_lap)
+
+        lines = [
+            "",
+            "==============================================================",
+            f"  🏆 NEW BEST at Episode {episode:4d}!",
+            "==============================================================",
+            f"  Score:      {score:8.1f}  (was {prev_best_score:8.1f},  {score_imp:+.1f}, {score_imp_pct})",
+            f"  Laps:       {laps:8d}  (was {prev_best_laps:8d},  {laps_imp:+d}, {laps_imp_pct})",
+            f"  Steps:      {total_steps:8d}  (was {prev_best_steps:8d},  {steps_imp:+d}, {steps_imp_pct})",
+            f"  Steps/Lap:  {steps_per_lap:8.1f}  (was {prev_best_steps_per_lap:8.1f},  {spl_imp:+.1f}, {spl_imp_pct})",
+            "==============================================================",
+            "",
+        ]
+
+        for line in lines:
+            tqdm.write(line, file=self.console)
 
     def log_summary(self, episodes: int, best_score: float, final_epsilon: float) -> None:
         """Print an end-of-training summary to the console.

@@ -55,7 +55,7 @@ class MockEnv:
             "win": False,
             "obstacles": [],
         }
-        return state, 1.0, done, {"episode_length": self._step_count, "max_y_reached": self._step_count}
+        return state, 1.0, done, {"episode_length": self._step_count, "max_y_reached": self._step_count, "laps_completed": 0}
 
     def seed(self, seed):
         pass
@@ -230,6 +230,34 @@ class TestTrainingOrchestrator(unittest.TestCase):
         self.assertIn("episodes", result)
         self.assertIn("best_score", result)
         self.assertIn("final_epsilon", result)
+
+    def test_new_best_episode_logged(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = TrainingConfig(episodes=3, eval_freq=10, log_dir=tmpdir)
+            env = MockEnv(max_steps=3)
+            trainer = DQNTrainer(DQNConfig(hidden_size=16))
+            console = io.StringIO()
+            logger = TrainingLogger(tmpdir, log_file="train.csv", console=console)
+            orch = self._make_orchestrator(config, env=env, trainer=trainer, logger=logger)
+            result = orch.run()
+
+            output = console.getvalue()
+            # First episode should be a new best (from -inf)
+            self.assertIn("NEW BEST", output)
+            # Subsequent episodes with same reward should not trigger new best
+            self.assertEqual(output.count("NEW BEST"), 1)
+            logger.close()
+
+    def test_run_episode_returns_laps_and_steps_per_lap(self):
+        config = TrainingConfig(episodes=2, eval_freq=10)
+        env = MockEnv(max_steps=3)
+        trainer = DQNTrainer(DQNConfig(hidden_size=16))
+        orch = self._make_orchestrator(config, env=env, trainer=trainer)
+        total_reward, length, loss, max_y, laps, steps_per_lap = orch._run_episode()
+        self.assertIsInstance(laps, int)
+        self.assertIsInstance(steps_per_lap, float)
+        self.assertEqual(laps, 0)  # MockEnv returns 0 laps
+        self.assertEqual(steps_per_lap, 0.0)  # 0 laps means 0.0 steps_per_lap
 
     def test_log_file_created(self):
         with tempfile.TemporaryDirectory() as tmpdir:

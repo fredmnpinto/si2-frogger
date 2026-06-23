@@ -290,12 +290,47 @@ class TestFroggerEnv(unittest.TestCase):
             "lives",
             "score",
             "laps",
+            "laps_completed",
             "high_score",
             "game_over",
             "win",
             "max_y_reached",
         }
         self.assertTrue(required_keys.issubset(info.keys()))
+
+    def test_laps_completed_tracking(self):
+        env = FroggerEnv()
+        env.reset()
+        env.game.obstacles = []
+        # Move to y=8 to complete a lap
+        for _ in range(8):
+            _, _, _, info = env.step("NORTH")
+        self.assertEqual(info["laps_completed"], 1)
+        self.assertEqual(env.game.laps, 1)
+
+    def test_laps_completed_multiple(self):
+        env = FroggerEnv()
+        env.reset()
+        env.game.obstacles = []
+        # Complete first lap
+        for _ in range(8):
+            env.step("NORTH")
+        # Complete second lap
+        for _ in range(8):
+            _, _, _, info = env.step("NORTH")
+        self.assertEqual(info["laps_completed"], 2)
+        self.assertEqual(env.game.laps, 2)
+
+    def test_laps_completed_reset(self):
+        env = FroggerEnv()
+        env.reset()
+        env.game.obstacles = []
+        for _ in range(8):
+            env.step("NORTH")
+        self.assertEqual(env._laps_completed, 1)
+        env.reset()
+        self.assertEqual(env._laps_completed, 0)
+        self.assertEqual(env._steps_at_lap_start, 0)
 
     def test_episode_length_tracking(self):
         env = FroggerEnv()
