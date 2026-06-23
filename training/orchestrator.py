@@ -251,8 +251,8 @@ class TrainingOrchestrator:
                     self._best_steps = length
                     self._best_steps_per_lap = steps_per_lap
 
-                    # Log the new best!
-                    if self.logger is not None:
+                    # Log the new best! (only after episode 100 to reduce early noise)
+                    if self.logger is not None and episode >= 100:
                         self.logger.log_new_best(
                             episode=episode,
                             score=total_reward,
@@ -287,16 +287,9 @@ class TrainingOrchestrator:
                         self._best_score,
                     )
 
-                # Periodic evaluation and best-model tracking
+                # Periodic evaluation and best-model tracking (silent)
                 if episode % self.config.eval_freq == 0:
-                    tqdm.write(f"\n{'='*50}")
-                    tqdm.write(f"Running evaluation at episode {episode}...")
-
                     eval_score = self._evaluate()
-
-                    tqdm.write(f"Evaluation complete: mean score = {eval_score:.2f}")
-                    tqdm.write(f"{'='*50}\n")
-
                     self.checkpoint_manager.save_best(
                         episode,
                         self._get_current_epsilon(),
@@ -304,7 +297,6 @@ class TrainingOrchestrator:
                     )
                     if eval_score > self._best_score:
                         self._best_score = eval_score
-                        tqdm.write(f"*** New best score: {self._best_score:.2f} ***\n")
 
             pbar.close()
 

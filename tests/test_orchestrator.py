@@ -231,7 +231,7 @@ class TestTrainingOrchestrator(unittest.TestCase):
         self.assertIn("best_score", result)
         self.assertIn("final_epsilon", result)
 
-    def test_new_best_episode_logged(self):
+    def test_new_best_not_logged_before_episode_100(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             config = TrainingConfig(episodes=3, eval_freq=10, log_dir=tmpdir)
             env = MockEnv(max_steps=3)
@@ -242,9 +242,37 @@ class TestTrainingOrchestrator(unittest.TestCase):
             result = orch.run()
 
             output = console.getvalue()
-            # First episode should be a new best (from -inf)
+            # New best should NOT be logged before episode 100
+            self.assertNotIn("NEW BEST", output)
+            logger.close()
+
+    def test_new_best_logged_after_episode_100(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = TrainingConfig(episodes=102, eval_freq=10, log_dir=tmpdir)
+            env = MockEnv(max_steps=3)
+            trainer = DQNTrainer(DQNConfig(hidden_size=16))
+            console = io.StringIO()
+            logger = TrainingLogger(tmpdir, log_file="train.csv", console=console)
+            orch = self._make_orchestrator(config, env=env, trainer=trainer, logger=logger)
+
+            # Patch _run_episode so episode 101 yields a new best
+            original_run_episode = orch._run_episode
+            call_count = 0
+
+            def patched_run_episode():
+                nonlocal call_count
+                call_count += 1
+                if call_count >= 101:
+                    # Return a much higher reward to trigger new best
+                    return 100.0, 10, None, 5, 0, 0.0
+                return original_run_episode()
+
+            orch._run_episode = patched_run_episode
+            result = orch.run()
+
+            output = console.getvalue()
+            # New best should be logged at episode 101
             self.assertIn("NEW BEST", output)
-            # Subsequent episodes with same reward should not trigger new best
             self.assertEqual(output.count("NEW BEST"), 1)
             logger.close()
 
