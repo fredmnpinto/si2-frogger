@@ -13,8 +13,6 @@ import os
 import sys
 from typing import Optional, TextIO
 
-from tqdm import tqdm
-
 
 def _calc_pct(improvement: float, baseline: float) -> str:
     """Calculate improvement percentage string.
@@ -130,8 +128,8 @@ class TrainingLogger:
         prev_best_laps: int,
         prev_best_steps: int,
         prev_best_steps_per_lap: float,
-    ) -> None:
-        """Log a new best episode achievement with improvements for all metrics.
+    ) -> str:
+        """Format a new best episode achievement message.
 
         Args:
             episode: Episode number where the new best was achieved.
@@ -143,6 +141,9 @@ class TrainingLogger:
             prev_best_laps: Previous best laps before this episode.
             prev_best_steps: Previous best steps before this episode.
             prev_best_steps_per_lap: Previous best steps per lap before this episode.
+
+        Returns:
+            Formatted banner string for display.
         """
         # Score improvement (higher is better)
         score_imp = score - prev_best_score
@@ -160,21 +161,12 @@ class TrainingLogger:
         spl_imp = steps_per_lap - prev_best_steps_per_lap
         spl_imp_pct = _calc_pct(spl_imp, prev_best_steps_per_lap)
 
-        lines = [
-            "",
-            "==============================================================",
-            f"  🏆 NEW BEST at Episode {episode:4d}!",
-            "==============================================================",
-            f"  Score:      {score:8.1f}  (was {prev_best_score:8.1f},  {score_imp:+.1f}, {score_imp_pct})",
-            f"  Laps:       {laps:8d}  (was {prev_best_laps:8d},  {laps_imp:+d}, {laps_imp_pct})",
-            f"  Steps:      {total_steps:8d}  (was {prev_best_steps:8d},  {steps_imp:+d}, {steps_imp_pct})",
-            f"  Steps/Lap:  {steps_per_lap:8.1f}  (was {prev_best_steps_per_lap:8.1f},  {spl_imp:+.1f}, {spl_imp_pct})",
-            "==============================================================",
-            "",
-        ]
-
-        for line in lines:
-            tqdm.write(line, file=self.console)
+        banner = (
+            f"🏆 NEW BEST at Episode {episode}! | "
+            f"Score: {score:.1f} (+{score_imp:.1f}, {score_imp_pct}) | "
+            f"Laps: {laps} | Steps: {total_steps} | Steps/Lap: {steps_per_lap:.1f}"
+        )
+        return banner
 
     def log_summary(self, episodes: int, best_score: float, final_epsilon: float) -> None:
         """Print an end-of-training summary to the console.
@@ -188,7 +180,7 @@ class TrainingLogger:
             f"\nTraining complete! Episodes: {episodes} | "
             f"Best score: {best_score:.2f} | Final epsilon: {final_epsilon:.4f}\n"
         )
-        tqdm.write(summary, file=self.console)
+        print(summary, file=self.console)
 
     def _is_finite(self, value: float) -> bool:
         """Check if a float value is finite (not NaN or Inf).

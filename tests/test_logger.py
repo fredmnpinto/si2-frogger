@@ -120,7 +120,7 @@ class TestTrainingLogger(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             console = io.StringIO()
             logger = TrainingLogger(tmpdir, console=console)
-            logger.log_new_best(
+            banner = logger.log_new_best(
                 episode=10,
                 score=150.0,
                 laps=2,
@@ -133,33 +133,26 @@ class TestTrainingLogger(unittest.TestCase):
             )
             logger.close()
 
+            # Should return a banner string, not print to console
+            self.assertIsInstance(banner, str)
+            self.assertIn("NEW BEST", banner)
+            self.assertIn("Episode 10", banner)
+            self.assertIn("150.0", banner)
+            self.assertIn("+50.0", banner)
+            self.assertIn("+50%", banner)
+            self.assertIn("Laps: 2", banner)
+            self.assertIn("Steps: 120", banner)
+            self.assertIn("Steps/Lap: 60.0", banner)
+
+            # Console should have no output from log_new_best
             output = console.getvalue()
-            self.assertIn("NEW BEST", output)
-            self.assertIn("Episode   10", output)
-            self.assertIn("150.0", output)
-            self.assertIn("100.0", output)
-            self.assertIn("+50.0", output)
-            self.assertIn("+50%", output)
-            self.assertIn("Laps:", output)
-            self.assertIn("2", output)
-            self.assertIn("1", output)
-            self.assertIn("+1", output)
-            self.assertIn("+100%", output)
-            self.assertIn("Steps:", output)
-            self.assertIn("120", output)
-            self.assertIn("200", output)
-            self.assertIn("-80", output)
-            self.assertIn("-40%", output)
-            self.assertIn("Steps/Lap:", output)
-            self.assertIn("60.0", output)
-            self.assertIn("-140.0", output)
-            self.assertIn("-70%", output)
+            self.assertEqual(output, "")
 
     def test_log_new_best_first_best(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             console = io.StringIO()
             logger = TrainingLogger(tmpdir, console=console)
-            logger.log_new_best(
+            banner = logger.log_new_best(
                 episode=1,
                 score=10.0,
                 laps=0,
@@ -172,16 +165,19 @@ class TestTrainingLogger(unittest.TestCase):
             )
             logger.close()
 
+            self.assertIsInstance(banner, str)
+            self.assertIn("NEW BEST", banner)
+            self.assertIn("Episode 1", banner)
+            self.assertIn("10.0", banner)
+
             output = console.getvalue()
-            self.assertIn("NEW BEST", output)
-            self.assertIn("Episode    1", output)
-            self.assertIn("10.0", output)
+            self.assertEqual(output, "")
 
     def test_log_new_best_no_csv_side_effect(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             console = io.StringIO()
             logger = TrainingLogger(tmpdir, console=console)
-            logger.log_new_best(
+            banner = logger.log_new_best(
                 episode=5,
                 score=200.0,
                 laps=3,
@@ -194,6 +190,9 @@ class TestTrainingLogger(unittest.TestCase):
             )
             logger.log_episode(5, 200.0, 0.5, 0.1, 200, max_y=8)
             logger.close()
+
+            # Should return a string
+            self.assertIsInstance(banner, str)
 
             # CSV should only have the episode row, not the new best banner
             with open(os.path.join(tmpdir, "training.csv"), "r", newline="") as f:

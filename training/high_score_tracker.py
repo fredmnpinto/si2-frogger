@@ -1,13 +1,15 @@
-"""In-place high score tracker using ANSI escape codes."""
+"""High score tracker using Rich tables for in-place display."""
 
 from typing import Dict, List
 
+from rich.table import Table
+
 
 class HighScoreTracker:
-    """Tracks last N high scores and displays them in-place in the terminal.
+    """Tracks last N high scores and renders them as a Rich table.
 
-    Uses ANSI escape codes to overwrite previous output, creating a fixed
-    window that updates without scrolling.
+    The table is designed to be used within a Rich Live display for
+    in-place updates without scrolling.
     """
 
     def __init__(self, max_entries: int = 3) -> None:
@@ -18,7 +20,6 @@ class HighScoreTracker:
         """
         self.max_entries = max_entries
         self.scores: List[Dict] = []
-        self._lines_printed = 0
 
     def add_score(
         self,
@@ -28,7 +29,7 @@ class HighScoreTracker:
         total_steps: int,
         steps_per_lap: float,
     ) -> None:
-        """Add a new high score and redraw the display.
+        """Add a new high score.
 
         Args:
             episode: Episode number.
@@ -46,27 +47,26 @@ class HighScoreTracker:
         })
         # Keep only last N entries
         self.scores = self.scores[-self.max_entries:]
-        self._redraw()
 
-    def _redraw(self) -> None:
-        """Clear previous lines and redraw the high score table."""
-        # Clear previous output
-        if self._lines_printed > 0:
-            # Move cursor up N lines
-            print(f"\033[{self._lines_printed}F", end="", flush=True)
-            # Clear each line
-            for _ in range(self._lines_printed):
-                print("\033[K", end="")
-                if _ < self._lines_printed - 1:
-                    print("\033[1B", end="")
-            # Move back up
-            print(f"\033[{self._lines_printed}F", end="", flush=True)
+    def get_table(self) -> Table:
+        """Generate a Rich table of the current high scores.
 
-        # Print header
-        print("┌─ Recent High Scores ─────────────────────────────────────┐")
-        self._lines_printed = 1
+        Returns:
+            Rich Table with the last N high scores (newest first).
+        """
+        table = Table(
+            title="Recent High Scores",
+            show_header=True,
+            header_style="bold magenta",
+            box=None,
+            padding=(0, 1),
+        )
+        table.add_column("Rank", style="bold", width=4)
+        table.add_column("Episode", justify="right", width=6)
+        table.add_column("Score", justify="right", width=8)
+        table.add_column("Laps", justify="right", width=4)
+        table.add_column("Steps/Lap", justify="right", width=9)
 
-        # Print scores (newest first)
         for i, score in enumerate(reversed(self.scores)):
             rank = i + 1
             ep = score["episode"]
@@ -75,30 +75,20 @@ class HighScoreTracker:
             spl = score["steps_per_lap"]
 
             # Highlight the newest entry
-            prefix = "▶" if i == 0 else " "
+            rank_str = f"▶#{rank}" if i == 0 else f"  #{rank}"
+            style = "bold green" if i == 0 else ""
 
-            print(
-                f"│ {prefix}#{rank} Ep {ep:4d} │ Score: {sc:7.1f} │ "
-                f"Laps: {lp} │ Steps/Lap: {spl:5.1f} │"
+            table.add_row(
+                rank_str,
+                str(ep),
+                f"{sc:.1f}",
+                str(lp),
+                f"{spl:.1f}",
+                style=style,
             )
-            self._lines_printed += 1
 
-        # Fill empty slots
-        for _ in range(self.max_entries - len(self.scores)):
-            print("│                                                          │")
-            self._lines_printed += 1
-
-        # Print footer
-        print("└──────────────────────────────────────────────────────────┘")
-        self._lines_printed += 1
+        return table
 
     def clear(self) -> None:
-        """Clear the display."""
-        if self._lines_printed > 0:
-            print(f"\033[{self._lines_printed}F", end="", flush=True)
-            for _ in range(self._lines_printed):
-                print("\033[K", end="")
-                if _ < self._lines_printed - 1:
-                    print("\033[1B", end="")
-            print(f"\033[{self._lines_printed}F", end="", flush=True)
-            self._lines_printed = 0
+        """Clear tracked scores."""
+        self.scores.clear()

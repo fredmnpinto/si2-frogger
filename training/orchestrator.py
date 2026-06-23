@@ -13,7 +13,6 @@ import sys
 from typing import Any, Dict, Optional
 
 import torch
-from tqdm import tqdm
 
 from env.frogger_env import FroggerEnv
 from models.dqn_network import StateEncoder
@@ -65,6 +64,11 @@ class TrainingOrchestrator:
         self._emergency_saved = False
         self.high_score_tracker = HighScoreTracker(max_entries=3)
 
+        # Banner state for Rich Live display
+        self._banner_message: Optional[str] = None
+        self._banner_episode: int = 0
+        self._banner_duration: int = 5  # Show banner for 5 episodes
+
         # Seed if requested
         if config.seed is not None:
             self.env.seed(config.seed)
@@ -90,10 +94,10 @@ class TrainingOrchestrator:
             )
             self._emergency_saved = True
             if self.logger is not None:
-                self.logger.console.write(
-                    "\nEmergency checkpoint saved. Exiting gracefully.\n"
+                print(
+                    "\nEmergency checkpoint saved. Exiting gracefully.\n",
+                    file=self.logger.console,
                 )
-                self.logger.console.flush()
         sys.exit(0)
 
     def _resume_from_checkpoint(self, path: str) -> None:
@@ -182,12 +186,7 @@ class TrainingOrchestrator:
         scores: list[float] = []
         max_eval_steps = 1000  # Prevent infinite episodes
 
-        for eval_ep in tqdm(
-            range(self.config.eval_episodes),
-            desc="Evaluating",
-            leave=False,
-            dynamic_ncols=True,
-        ):
+        for _ in range(self.config.eval_episodes):
             state = self.env.reset()
             state_tensor = self.encoder.encode(state).to(self.trainer.device)
             done = False
@@ -202,7 +201,6 @@ class TrainingOrchestrator:
                 steps += 1
 
             scores.append(total_reward)
-            # Evaluation progress logging removed for cleaner output
 
         mean_score = sum(scores) / len(scores) if scores else 0.0
         return mean_score
@@ -225,89 +223,148 @@ class TrainingOrchestrator:
                 self.trainer,
             )
 
+        # Local imports so tests can easily mock Rich components
+        from rich.progress import (
+            Progress,
+            TextColumn,
+            BarColumn,
+            TaskProgressColumn,
+            TimeRemainingColumn,
+            MofNCompleteColumn,
+        )
+        from rich.live import Live
+        from rich.console import Group
+
+        progress = Progress(
+            TextColumn("[bold blue]Training"),
+            MofNCompleteColumn(),
+            BarColumn(bar_width=None),
+            TaskProgressColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(),
+            TextColumn("• EPS: {task.fields[epsilon]:.3f}"),
+            TextColumn("• Best: {task.fields[best_score]:.1f}"),
+            TextColumn("• Reward: {task.fields[reward]:.1f}"),
+            TextColumn("• Laps: {task.fields[laps]}"),
+            TextColumn("• MaxY: {task.fields[max_y]}"),
+        )
+
+        task_id = progress.add_task(
+            "training",
+            total=self.config.episodes,
+            completed=self._episode,
+            epsilon=self._get_current_epsilon(),
+            best_score=self._best_score,
+            reward=0.0,
+            laps=0,
+            max_y=0,
+        )
+
+        # Create a group that combines progress + optional banner + high score table
+        def render_display():
+            from rich.panel import Panel
+
+            elements = [progress]
+
+            if self._banner_message is not None:
+                banner_panel = Panel(
+                    self._banner_message,
+                    title="[bold yellow]🎉 Achievement",
+                    border_style="yellow",
+                    padding=(0, 1),
+                )
+                elements.append(banner_panel)
+
+            table = self.high_score_tracker.get_table()
+            elements.append(table)
+
+            return Group(*elements)
+
         try:
-            pbar = tqdm(
-                range(self._episode + 1, self.config.episodes + 1),
-                initial=self._episode,
-                total=self.config.episodes,
-                desc="Training",
-                dynamic_ncols=True,
-            )
+            with Live(render_display(), refresh_per_second=4) as live:
+                for episode in range(self._episode + 1, self.config.episodes + 1):
+                    self._episode = episode
+                    total_reward, length, loss, max_y, laps, steps_per_lap = self._run_episode()
 
-            for episode in pbar:
-                self._episode = episode
-                total_reward, length, loss, max_y, laps, steps_per_lap = self._run_episode()
+                    # Check if new best
+                    if total_reward > self._best_score:
+                        prev_best_score = self._best_score
+                        prev_best_laps = self._best_laps
+                        prev_best_steps = self._best_steps
+                        prev_best_steps_per_lap = self._best_steps_per_lap
 
-                # Check if new best
-                if total_reward > self._best_score:
-                    prev_best_score = self._best_score
-                    prev_best_laps = self._best_laps
-                    prev_best_steps = self._best_steps
-                    prev_best_steps_per_lap = self._best_steps_per_lap
+                        self._best_score = total_reward
+                        self._best_laps = laps
+                        self._best_steps = length
+                        self._best_steps_per_lap = steps_per_lap
 
-                    self._best_score = total_reward
-                    self._best_laps = laps
-                    self._best_steps = length
-                    self._best_steps_per_lap = steps_per_lap
+                        # Log the new best! (only after episode 100 to reduce early noise)
+                        if self.logger is not None and episode >= 100:
+                            banner = self.logger.log_new_best(
+                                episode=episode,
+                                score=total_reward,
+                                laps=laps,
+                                total_steps=length,
+                                steps_per_lap=steps_per_lap,
+                                prev_best_score=prev_best_score,
+                                prev_best_laps=prev_best_laps,
+                                prev_best_steps=prev_best_steps,
+                                prev_best_steps_per_lap=prev_best_steps_per_lap,
+                            )
+                            self._banner_message = banner
+                            self._banner_episode = episode
 
-                    # Log the new best! (only after episode 100 to reduce early noise)
-                    if self.logger is not None and episode >= 100:
-                        self.logger.log_new_best(
-                            episode=episode,
-                            score=total_reward,
-                            laps=laps,
-                            total_steps=length,
-                            steps_per_lap=steps_per_lap,
-                            prev_best_score=prev_best_score,
-                            prev_best_laps=prev_best_laps,
-                            prev_best_steps=prev_best_steps,
-                            prev_best_steps_per_lap=prev_best_steps_per_lap,
-                        )
+                        # Show in-place high score tracker (only after ep 100)
+                        if episode >= 100:
+                            self.high_score_tracker.add_score(
+                                episode=episode,
+                                score=total_reward,
+                                laps=laps,
+                                total_steps=length,
+                                steps_per_lap=steps_per_lap,
+                            )
 
-                    # Show in-place high score tracker (only after ep 100)
-                    if episode >= 100:
-                        self.high_score_tracker.add_score(
-                            episode=episode,
-                            score=total_reward,
-                            laps=laps,
-                            total_steps=length,
-                            steps_per_lap=steps_per_lap,
-                        )
+                    # Clear banner after duration
+                    if self._banner_message is not None and episode - self._banner_episode >= self._banner_duration:
+                        self._banner_message = None
 
-                # Still log to CSV for plotting
-                self.logger.log_episode(
-                    episode, total_reward, self._get_current_epsilon(), loss, length, max_y
-                )
-
-                # Update tqdm postfix
-                pbar.set_postfix(
-                    reward=f"{total_reward:.1f}",
-                    eps=f"{self._get_current_epsilon():.3f}",
-                    best=f"{self._best_score:.1f}",
-                    max_y=max_y,
-                    laps=laps,
-                )
-
-                # Periodic checkpoint
-                if self.checkpoint_manager.should_save(episode):
-                    self.checkpoint_manager.save(
-                        episode,
-                        self._get_current_epsilon(),
-                        self._best_score,
+                    # Still log to CSV for plotting
+                    self.logger.log_episode(
+                        episode, total_reward, self._get_current_epsilon(), loss, length, max_y
                     )
 
-                # Periodic evaluation and best-model tracking (silent)
-                if episode % self.config.eval_freq == 0:
-                    eval_score = self._evaluate()
-                    self.checkpoint_manager.save_best(
-                        episode,
-                        self._get_current_epsilon(),
-                        eval_score,
+                    # Update progress bar
+                    progress.update(
+                        task_id,
+                        advance=1,
+                        epsilon=self._get_current_epsilon(),
+                        best_score=self._best_score,
+                        reward=total_reward,
+                        laps=laps,
+                        max_y=max_y,
                     )
-                    if eval_score > self._best_score:
-                        self._best_score = eval_score
 
-            pbar.close()
+                    # Refresh live display (triggers re-render with updated table)
+                    live.update(render_display())
+
+                    # Periodic checkpoint
+                    if self.checkpoint_manager.should_save(episode):
+                        self.checkpoint_manager.save(
+                            episode,
+                            self._get_current_epsilon(),
+                            self._best_score,
+                        )
+
+                    # Periodic evaluation and best-model tracking (silent)
+                    if episode % self.config.eval_freq == 0:
+                        eval_score = self._evaluate()
+                        self.checkpoint_manager.save_best(
+                            episode,
+                            self._get_current_epsilon(),
+                            eval_score,
+                        )
+                        if eval_score > self._best_score:
+                            self._best_score = eval_score
 
         except RuntimeError as exc:
             if "Non-finite loss" in str(exc):
@@ -318,11 +375,11 @@ class TrainingOrchestrator:
                         self._best_score,
                     )
                 if self.logger is not None:
-                    self.logger.console.write(
+                    print(
                         f"\nTraining aborted due to non-finite loss: {exc}\n"
-                        f"Crash recovery checkpoint saved.\n"
+                        f"Crash recovery checkpoint saved.\n",
+                        file=self.logger.console,
                     )
-                    self.logger.console.flush()
             raise
 
         finally:
