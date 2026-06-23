@@ -15,6 +15,8 @@ from training.config import (
     DEFAULT_EVAL_FREQ,
     DEFAULT_LOG_DIR,
     DEFAULT_LOG_FILE,
+    DEFAULT_MAX_STEPS_PER_LAP,
+    DEFAULT_MAX_TOTAL_STEPS,
     DEFAULT_PLOT_DIR,
     TrainingConfig,
     parse_args,
@@ -58,6 +60,14 @@ class TestTrainingConfigDefaults(unittest.TestCase):
     def test_default_resume_is_none(self):
         config = TrainingConfig()
         self.assertIsNone(config.resume)
+
+    def test_default_max_steps_per_lap(self):
+        config = TrainingConfig()
+        self.assertEqual(config.max_steps_per_lap, DEFAULT_MAX_STEPS_PER_LAP)
+
+    def test_default_max_total_steps(self):
+        config = TrainingConfig()
+        self.assertEqual(config.max_total_steps, DEFAULT_MAX_TOTAL_STEPS)
 
     def test_default_dqn_config(self):
         config = TrainingConfig()
@@ -174,6 +184,14 @@ class TestParseArgs(unittest.TestCase):
             config = parse_args(["--config", path, "--episodes", "2000"])
             self.assertEqual(config.episodes, 2000)
             self.assertEqual(config.seed, 10)
+
+    def test_override_max_steps_per_lap(self):
+        config = parse_args(["--max-steps-per-lap", "150"])
+        self.assertEqual(config.max_steps_per_lap, 150)
+
+    def test_override_max_total_steps(self):
+        config = parse_args(["--max-total-steps", "3000"])
+        self.assertEqual(config.max_total_steps, 3000)
 
     def test_all_dqn_overrides(self):
         config = parse_args([

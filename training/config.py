@@ -25,6 +25,8 @@ DEFAULT_LOG_DIR: str = "logs"
 DEFAULT_CHECKPOINT_DIR: str = "checkpoints"
 DEFAULT_PLOT_DIR: str = "plots"
 DEFAULT_LOG_FILE: str = "training.csv"
+DEFAULT_MAX_STEPS_PER_LAP: int = 200
+DEFAULT_MAX_TOTAL_STEPS: int = 2000
 
 
 @dataclass
@@ -43,6 +45,8 @@ class TrainingConfig:
         seed: Random seed for reproducibility. ``None`` means unseeded.
         resume: Path to a checkpoint file to resume from.
         config_file: Path to a JSON configuration file.
+        max_steps_per_lap: Max steps allowed without completing a lap.
+        max_total_steps: Absolute max steps per episode.
         dqn: DQN hyperparameter configuration.
     """
 
@@ -57,6 +61,8 @@ class TrainingConfig:
     seed: Optional[int] = None
     resume: Optional[str] = None
     config_file: Optional[str] = None
+    max_steps_per_lap: int = DEFAULT_MAX_STEPS_PER_LAP
+    max_total_steps: int = DEFAULT_MAX_TOTAL_STEPS
     dqn: DQNConfig = field(default_factory=DQNConfig)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -191,6 +197,18 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="config_file",
         help="Path to JSON configuration file.",
     )
+    parser.add_argument(
+        "--max-steps-per-lap",
+        type=int,
+        default=None,
+        help=f"Maximum steps allowed without completing a lap (default: {DEFAULT_MAX_STEPS_PER_LAP}).",
+    )
+    parser.add_argument(
+        "--max-total-steps",
+        type=int,
+        default=None,
+        help=f"Absolute maximum steps per episode (default: {DEFAULT_MAX_TOTAL_STEPS}).",
+    )
 
     # DQN hyperparameters
     parser.add_argument(
@@ -320,6 +338,10 @@ def parse_args(args: Optional[List[str]] = None) -> TrainingConfig:
         config.resume = namespace.resume
     if namespace.config_file is not None:
         config.config_file = namespace.config_file
+    if namespace.max_steps_per_lap is not None:
+        config.max_steps_per_lap = namespace.max_steps_per_lap
+    if namespace.max_total_steps is not None:
+        config.max_total_steps = namespace.max_total_steps
 
     # Override DQN config
     dqn_overrides = {

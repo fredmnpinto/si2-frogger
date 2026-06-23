@@ -62,6 +62,50 @@ class MockEnv:
         pass
 
 
+class MockEnvWithLaps:
+    """Mock environment that simulates lap completion at configurable steps."""
+
+    def __init__(self, lap_at_steps: list[int] = None, never_done: bool = False) -> None:
+        self.lap_at_steps = set(lap_at_steps or [])
+        self.never_done = never_done
+        self._step_count = 0
+        self._laps = 0
+
+    def reset(self):
+        self._step_count = 0
+        self._laps = 0
+        return {
+            "frog_x": 5,
+            "frog_y": 0,
+            "lives": 3,
+            "score": 0,
+            "high_score": 0,
+            "game_over": False,
+            "win": False,
+            "obstacles": [],
+        }
+
+    def step(self, action):
+        self._step_count += 1
+        if self._step_count in self.lap_at_steps:
+            self._laps += 1
+        done = False if self.never_done else (self._step_count >= 10000)
+        state = {
+            "frog_x": 5,
+            "frog_y": 0,
+            "lives": 3,
+            "score": 0,
+            "high_score": 0,
+            "game_over": done,
+            "win": False,
+            "obstacles": [],
+        }
+        return state, 1.0, done, {"episode_length": self._step_count, "max_y_reached": self._step_count, "laps_completed": self._laps}
+
+    def seed(self, seed):
+        pass
+
+
 def _make_rich_mocks():
     """Create mock objects for Rich Live and Progress."""
     mock_live = mock.MagicMock()
@@ -380,6 +424,68 @@ class TestTrainingOrchestrator(unittest.TestCase):
         self.assertIsInstance(steps_per_lap, float)
         self.assertEqual(laps, 0)  # MockEnv returns 0 laps
         self.assertEqual(steps_per_lap, 0.0)  # 0 laps means 0.0 steps_per_lap
+
+    def test_episode_truncated_by_max_steps_per_lap(self):
+        config = TrainingConfig(
+            episodes=2,
+            eval_freq=10,
+            max_steps_per_lap=5,
+            max_total_steps=100,
+        )
+        env = MockEnvWithLaps(never_done=True)
+        trainer = DQNTrainer(DQNConfig(hidden_size=16))
+        orch = self._make_orchestrator(config, env=env, trainer=trainer)
+        total_reward, length, loss, max_y, laps, steps_per_lap = orch._run_episode()
+        # Should truncate at exactly max_steps_per_lap steps since no lap completes
+        self.assertEqual(length, 5)
+
+    def test_episode_truncated_by_max_total_steps(self):
+        config = TrainingConfig(
+            episodes=2,
+            eval_freq=10,
+            max_steps_per_lap=1000,
+            max_total_steps=7,
+        )
+        env = MockEnvWithLaps(never_done=True)
+        trainer = DQNTrainer(DQNConfig(hidden_size=16))
+        orch = self._make_orchestrator(config, env=env, trainer=trainer)
+        total_reward, length, loss, max_y, laps, steps_per_lap = orch._run_episode()
+        # Should truncate at max_total_steps
+        self.assertEqual(length, 7)
+
+    def test_lap_completion_resets_lap_timer(self):
+        config = TrainingConfig(
+            episodes=2,
+            eval_freq=10,
+            max_steps_per_lap=10,
+            max_total_steps=100,
+        )
+        # Lap completes at step 5, so episode can run up to step 15 before truncation
+        env = MockEnvWithLaps(lap_at_steps=[5], never_done=True)
+        trainer = DQNTrainer(DQNConfig(hidden_size=16))
+        orch = self._make_orchestrator(config, env=env, trainer=trainer)
+        total_reward, length, loss, max_y, laps, steps_per_lap = orch._run_episode()
+        # Should run past max_steps_per_lap because lap reset the timer
+        self.assertGreater(length, 10)
+        self.assertEqual(laps, 1)
+
+    def test_config_values_respected_in_evaluate(self):
+        config = TrainingConfig(
+            episodes=2,
+            eval_freq=10,
+            max_steps_per_lap=4,
+            max_total_steps=100,
+            eval_episodes=1,
+        )
+        env = MockEnvWithLaps(never_done=True)
+        trainer = DQNTrainer(DQNConfig(hidden_size=16))
+        orch = self._make_orchestrator(config, env=env, trainer=trainer)
+        score = orch._evaluate()
+        # Eval should also respect max_steps_per_lap:
+        # steps variable ends at 4 (truncated when steps_since_lap >= 4),
+        # but env.step() was called one extra time before the break.
+        self.assertEqual(score, 4.0)
+        self.assertEqual(env._step_count, 5)
 
     def test_log_file_created(self):
         with tempfile.TemporaryDirectory() as tmpdir:

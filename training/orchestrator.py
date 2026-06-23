@@ -134,22 +134,31 @@ class TrainingOrchestrator:
         total_reward = 0.0
         episode_losses: list[float] = []
         steps = 0
-        max_steps = 500
+        max_steps_per_lap = self.config.max_steps_per_lap
+        max_total_steps = self.config.max_total_steps
         max_y = 0
         laps_completed = 0
         steps_at_lap_start = 0
+        truncated = False
 
-        while not done and steps < max_steps:
+        while not done and steps < max_total_steps:
             epsilon = self._get_current_epsilon()
             action = self.trainer.select_action(state_tensor, epsilon)
             next_state, reward, done, info = self.env.step(action)
             if info.get("max_y_reached", 0) > max_y:
                 max_y = info["max_y_reached"]
 
-            # Track lap completion
+            # Track lap completion and reset lap timer
             if info.get("laps_completed", 0) > laps_completed:
                 laps_completed = info["laps_completed"]
                 steps_at_lap_start = steps
+
+            # Check steps-per-lap limit
+            steps_since_lap = steps - steps_at_lap_start
+            if steps_since_lap >= max_steps_per_lap:
+                done = True
+                truncated = True
+                break
 
             next_state_tensor = self.encoder.encode(next_state).to(self.trainer.device)
 
@@ -170,9 +179,10 @@ class TrainingOrchestrator:
             state_tensor = next_state_tensor
             steps += 1
 
-        # If truncated by step limit, mark as done
-        if steps >= max_steps and not done:
+        # If truncated by total step limit, mark as done
+        if steps >= max_total_steps and not done:
             done = True
+            truncated = True
 
         avg_loss = sum(episode_losses) / len(episode_losses) if episode_losses else None
         steps_per_lap = steps / laps_completed if laps_completed > 0 else 0.0
@@ -185,7 +195,8 @@ class TrainingOrchestrator:
             Mean total reward over the evaluation episodes.
         """
         scores: list[float] = []
-        max_eval_steps = 1000  # Prevent infinite episodes
+        max_steps_per_lap = self.config.max_steps_per_lap
+        max_total_steps = self.config.max_total_steps
 
         for _ in range(self.config.eval_episodes):
             state = self.env.reset()
@@ -193,10 +204,24 @@ class TrainingOrchestrator:
             done = False
             total_reward = 0.0
             steps = 0
+            laps_completed = 0
+            steps_at_lap_start = 0
 
-            while not done and steps < max_eval_steps:
+            while not done and steps < max_total_steps:
                 action = self.trainer.select_action(state_tensor, epsilon=0.0)
-                next_state, reward, done, _ = self.env.step(action)
+                next_state, reward, done, info = self.env.step(action)
+
+                # Track lap completion and reset lap timer
+                if info.get("laps_completed", 0) > laps_completed:
+                    laps_completed = info["laps_completed"]
+                    steps_at_lap_start = steps
+
+                # Check steps-per-lap limit
+                steps_since_lap = steps - steps_at_lap_start
+                if steps_since_lap >= max_steps_per_lap:
+                    done = True
+                    break
+
                 state_tensor = self.encoder.encode(next_state).to(self.trainer.device)
                 total_reward += reward
                 steps += 1
