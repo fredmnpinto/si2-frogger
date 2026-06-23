@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import signal
 import sys
+import time
 from typing import Any, Dict, Optional
 
 import torch
@@ -66,8 +67,8 @@ class TrainingOrchestrator:
 
         # Banner state for Rich Live display
         self._banner_message: Optional[str] = None
-        self._banner_episode: int = 0
-        self._banner_duration: int = 5  # Show banner for 5 episodes
+        self._banner_time: float = 0.0
+        self._banner_duration: float = 8.0  # Show banner for 8 seconds
 
         # Seed if requested
         if config.seed is not None:
@@ -312,7 +313,7 @@ class TrainingOrchestrator:
                                 prev_best_steps_per_lap=prev_best_steps_per_lap,
                             )
                             self._banner_message = banner
-                            self._banner_episode = episode
+                            self._banner_time = time.time()
 
                         # Show in-place high score tracker (only after ep 100)
                         if episode >= 100:
@@ -325,7 +326,7 @@ class TrainingOrchestrator:
                             )
 
                     # Clear banner after duration
-                    if self._banner_message is not None and episode - self._banner_episode >= self._banner_duration:
+                    if self._banner_message is not None and time.time() - self._banner_time >= self._banner_duration:
                         self._banner_message = None
 
                     # Still log to CSV for plotting

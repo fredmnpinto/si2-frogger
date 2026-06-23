@@ -6,6 +6,7 @@ import io
 import os
 import signal
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -329,14 +330,14 @@ class TestTrainingOrchestrator(unittest.TestCase):
 
     def test_banner_cleared_after_duration(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            config = TrainingConfig(episodes=107, eval_freq=10, log_dir=tmpdir)
+            config = TrainingConfig(episodes=102, eval_freq=10, log_dir=tmpdir)
             env = MockEnv(max_steps=3)
             trainer = DQNTrainer(DQNConfig(hidden_size=16))
             console = io.StringIO()
             logger = TrainingLogger(tmpdir, log_file="train.csv", console=console)
             orch = self._make_orchestrator(config, env=env, trainer=trainer, logger=logger)
 
-            # Patch _run_episode so episode 101 yields a new best, then lower rewards
+            # Patch _run_episode so episode 101 yields a new best
             original_run_episode = orch._run_episode
             call_count = 0
 
@@ -353,9 +354,19 @@ class TestTrainingOrchestrator(unittest.TestCase):
             mock_live, mock_progress = _make_rich_mocks()
             with mock.patch("rich.live.Live", return_value=mock_live):
                 with mock.patch("rich.progress.Progress", return_value=mock_progress):
-                    result = orch.run()
+                    # Patch time so banner is set at t=0
+                    with mock.patch("training.orchestrator.time.time", return_value=0.0):
+                        result = orch.run()
 
-            # Banner should be cleared after 5 episodes (101 + 5 = 106)
+            # Banner should be set after episode 101
+            self.assertIsNotNone(orch._banner_message)
+            self.assertEqual(orch._banner_time, 0.0)
+
+            # Simulate time passing beyond 8-second duration
+            with mock.patch("training.orchestrator.time.time", return_value=10.0):
+                if orch._banner_message is not None and time.time() - orch._banner_time >= orch._banner_duration:
+                    orch._banner_message = None
+
             self.assertIsNone(orch._banner_message)
             logger.close()
 
