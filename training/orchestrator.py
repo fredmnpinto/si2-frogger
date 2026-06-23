@@ -20,6 +20,7 @@ from models.dqn_network import StateEncoder
 from training.checkpoint import CheckpointManager
 from training.config import TrainingConfig
 from training.dqn_trainer import DQNTrainer
+from training.high_score_tracker import HighScoreTracker
 from training.logger import TrainingLogger
 
 
@@ -62,6 +63,7 @@ class TrainingOrchestrator:
         self._best_steps_per_lap = float("inf")  # Lower is better
         self._interrupted = False
         self._emergency_saved = False
+        self.high_score_tracker = HighScoreTracker(max_entries=3)
 
         # Seed if requested
         if config.seed is not None:
@@ -260,6 +262,16 @@ class TrainingOrchestrator:
                             prev_best_laps=prev_best_laps,
                             prev_best_steps=prev_best_steps,
                             prev_best_steps_per_lap=prev_best_steps_per_lap,
+                        )
+
+                    # Show in-place high score tracker (only after ep 100)
+                    if episode >= 100:
+                        self.high_score_tracker.add_score(
+                            episode=episode,
+                            score=total_reward,
+                            laps=laps,
+                            total_steps=length,
+                            steps_per_lap=steps_per_lap,
                         )
 
                 # Still log to CSV for plotting
