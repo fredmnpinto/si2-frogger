@@ -139,6 +139,57 @@ class TestStateEncoder(unittest.TestCase):
         dist = encoder._distance_to_obstacle(9.0, 8.0, 2.0, width=10.0)
         self.assertEqual(dist, 0.0)
 
+    def test_sensor_distance_no_obstacle(self):
+        encoder = StateEncoder(width=11)
+        obstacles = []
+        dist = encoder._sensor_distance(5.0, 0, 0, 1, obstacles)
+        self.assertEqual(dist, 1.0)
+
+    def test_sensor_distance_with_obstacle(self):
+        encoder = StateEncoder(width=11)
+        obstacles = [
+            {"x": 5.0, "y": 1, "width": 1.0, "speed": 1.0, "type": "car"},
+        ]
+        # Sensor N from (5, 0) should hit obstacle at y=1, x=5
+        dist = encoder._sensor_distance(5.0, 0, 0, 1, obstacles)
+        self.assertEqual(dist, 1.0 / 3.0)
+
+    def test_sensor_distance_out_of_range(self):
+        encoder = StateEncoder(width=11)
+        obstacles = [
+            {"x": 5.0, "y": 5, "width": 1.0, "speed": 1.0, "type": "car"},
+        ]
+        # Sensor N from (5, 0) with max_range=3 cannot reach y=5
+        dist = encoder._sensor_distance(5.0, 0, 0, 1, obstacles)
+        self.assertEqual(dist, 1.0)
+
+    def test_sensor_distance_wrap_around(self):
+        encoder = StateEncoder(width=11)
+        obstacles = [
+            {"x": 10.0, "y": 1, "width": 2.0, "speed": 1.0, "type": "car"},
+        ]
+        # Sensor NE from (10, 0): dist=1 -> (10+1)%11=0, y=0+1=1. Obstacle covers [10,12] -> [10,11] and [0,1].
+        # check_x=0 is within [0,1], so hit at dist=1.
+        dist = encoder._sensor_distance(10.0, 0, 1, 1, obstacles)
+        self.assertEqual(dist, 1.0 / 3.0)
+
+    def test_directional_sensors_in_encoded_state(self):
+        encoder = StateEncoder(width=11)
+        state = self._make_state(
+            frog_x=5.0,
+            frog_y=0,
+            obstacles=[
+                {"x": 5.0, "y": 1, "width": 1.0, "speed": 1.0, "type": "car"},
+            ],
+        )
+        tensor = encoder.encode(state)
+        # Sensor features are at indices 22-29
+        # N sensor (index 22) should detect obstacle at distance 1 -> 1/3
+        self.assertAlmostEqual(tensor[22].item(), 1.0 / 3.0, places=5)
+        # Other sensors should be clear (1.0)
+        for idx in range(23, 30):
+            self.assertEqual(tensor[idx].item(), 1.0)
+
 
 class TestDQNNetwork(unittest.TestCase):
     """Tests for :class:`DQNNetwork`."""
@@ -158,9 +209,9 @@ class TestDQNNetwork(unittest.TestCase):
     def test_parameter_count(self):
         net = DQNNetwork()
         total = sum(p.numel() for p in net.parameters())
-        # Expected: ~20K parameters (allow generous tolerance)
-        self.assertGreater(total, 15000)
-        self.assertLess(total, 25000)
+        # Expected: ~75K parameters with 30-D input, 256 hidden, 5 actions
+        self.assertGreater(total, 70000)
+        self.assertLess(total, 80000)
 
     def test_cpu_forward(self):
         net = DQNNetwork()

@@ -62,7 +62,7 @@ class TestTrainingConfigDefaults(unittest.TestCase):
     def test_default_dqn_config(self):
         config = TrainingConfig()
         self.assertIsInstance(config.dqn, DQNConfig)
-        self.assertEqual(config.dqn.learning_rate, 1e-3)
+        self.assertEqual(config.dqn.learning_rate, 5e-4)
 
 
 class TestTrainingConfigSerialization(unittest.TestCase):

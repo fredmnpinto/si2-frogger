@@ -19,7 +19,7 @@ class TestDQNTrainerInitialization(unittest.TestCase):
     def test_default_config(self):
         trainer = DQNTrainer()
         self.assertIsInstance(trainer.config, DQNConfig)
-        self.assertEqual(trainer.config.learning_rate, 1e-3)
+        self.assertEqual(trainer.config.learning_rate, 5e-4)
         self.assertEqual(trainer.config.gamma, 0.99)
 
     def test_custom_config(self):
@@ -103,7 +103,7 @@ class TestActionSelection(unittest.TestCase):
                 p.fill_(0.1)
 
         action = trainer.select_action(state, epsilon=0.0)
-        self.assertIn(action, range(4))
+        self.assertIn(action, range(5))
 
     def test_random_action_with_epsilon_one(self):
         trainer = DQNTrainer()
@@ -195,7 +195,7 @@ class TestTargetNetworkUpdates(unittest.TestCase):
 class TestTrainingStep(unittest.TestCase):
     """Tests for the DQN training step."""
 
-    def _fill_buffer(self, trainer: DQNTrainer, n: int = 50) -> None:
+    def _fill_buffer(self, trainer: DQNTrainer, n: int = 100) -> None:
         """Populate the replay buffer with random transitions."""
         for _ in range(n):
             trainer.replay_buffer.push(
@@ -215,7 +215,7 @@ class TestTrainingStep(unittest.TestCase):
 
     def test_train_step_returns_finite_loss(self):
         trainer = DQNTrainer()
-        self._fill_buffer(trainer, n=50)
+        self._fill_buffer(trainer, n=100)
         # Force training by setting step_count so that modulo passes
         trainer.step_count = trainer.config.update_frequency - 1
         loss = trainer.train_step()
@@ -225,14 +225,14 @@ class TestTrainingStep(unittest.TestCase):
 
     def test_train_step_skips_on_frequency(self):
         trainer = DQNTrainer(DQNConfig(update_frequency=4))
-        self._fill_buffer(trainer, n=50)
+        self._fill_buffer(trainer, n=100)
         trainer.step_count = 0
         loss = trainer.train_step()  # step_count becomes 1, 1 % 4 != 0
         self.assertIsNone(loss)
 
     def test_train_step_detects_nan(self):
         trainer = DQNTrainer()
-        self._fill_buffer(trainer, n=50)
+        self._fill_buffer(trainer, n=100)
 
         # Corrupt buffer rewards to force NaN
         trainer.replay_buffer.rewards.fill_(float("inf"))
@@ -243,7 +243,7 @@ class TestTrainingStep(unittest.TestCase):
 
     def test_gradient_clipping_is_applied(self):
         trainer = DQNTrainer()
-        self._fill_buffer(trainer, n=50)
+        self._fill_buffer(trainer, n=100)
         trainer.step_count = trainer.config.update_frequency - 1
 
         with mock.patch("torch.nn.utils.clip_grad_norm_") as mock_clip:
@@ -254,7 +254,7 @@ class TestTrainingStep(unittest.TestCase):
 
     def test_policy_network_changes_after_train(self):
         trainer = DQNTrainer()
-        self._fill_buffer(trainer, n=50)
+        self._fill_buffer(trainer, n=100)
 
         # Snapshot weights before
         before = [p.clone() for p in trainer.policy_net.parameters()]
@@ -272,7 +272,7 @@ class TestTrainingStep(unittest.TestCase):
 
     def test_target_net_used_for_q_target(self):
         trainer = DQNTrainer()
-        self._fill_buffer(trainer, n=50)
+        self._fill_buffer(trainer, n=100)
 
         # Make target and policy outputs very different
         with torch.no_grad():

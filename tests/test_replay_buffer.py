@@ -6,9 +6,8 @@ import unittest
 
 import torch
 
+from models.dqn_network import STATE_DIM
 from training.replay_buffer import ReplayBuffer
-
-STATE_DIM = 22
 
 
 class TestReplayBuffer(unittest.TestCase):

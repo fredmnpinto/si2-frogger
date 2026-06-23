@@ -2,25 +2,25 @@
 
 This module provides:
     - :class:`StateEncoder`: Converts raw Frogger game state dictionaries into
-      fixed-size 22-dimensional feature vectors.
+      fixed-size 30-dimensional feature vectors.
     - :class:`DQNNetwork`: A simple MLP that maps state vectors to Q-values
-      for the four discrete actions (NORTH, SOUTH, EAST, WEST).
+      for the five discrete actions (NORTH, SOUTH, EAST, WEST, STAY).
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import torch
 import torch.nn as nn
 
-STATE_DIM = 22
+STATE_DIM = 30
 """Dimensionality of the encoded state vector."""
 
-NUM_ACTIONS = 4
-"""Number of discrete actions (NORTH, SOUTH, EAST, WEST)."""
+NUM_ACTIONS = 5
+"""Number of discrete actions (NORTH, SOUTH, EAST, WEST, STAY)."""
 
-HIDDEN_SIZE = 128
+HIDDEN_SIZE = 256
 """Default hidden layer size for the DQN network."""
 
 MAX_SPEED = 1.8
@@ -29,11 +29,27 @@ MAX_SPEED = 1.8
 TRAFFIC_LANES = (1, 2, 3, 5, 6, 7)
 """Y-coordinates of the six traffic lanes."""
 
+# Directional sensor offsets (dx, dy) for 8 directions.
+SENSOR_DIRECTIONS = [
+    (0, 1),    # N
+    (0, -1),   # S
+    (1, 0),    # E
+    (-1, 0),   # W
+    (1, 1),    # NE
+    (-1, 1),   # NW
+    (1, -1),   # SE
+    (-1, -1),  # SW
+]
+"""Eight directional offsets used for obstacle sensors."""
+
+SENSOR_MAX_RANGE = 3
+"""Maximum range (in grid cells) for each directional sensor."""
+
 
 class StateEncoder:
     """Encodes raw Frogger game state into a fixed-size feature vector.
 
-    The output vector has :data:`STATE_DIM` (22) elements:
+    The output vector has :data:`STATE_DIM` (30) elements:
 
     +---------+------------------------------------------+
     | Indices | Description                              |
@@ -47,6 +63,7 @@ class StateEncoder:
     | 13-15   | Lane 5: distance, speed, width           |
     | 16-18   | Lane 6: distance, speed, width           |
     | 19-21   | Lane 7: distance, speed, width           |
+    | 22-29   | Directional sensors (8 directions)       |
     +---------+------------------------------------------+
     """
 
@@ -61,7 +78,7 @@ class StateEncoder:
         self.height = height
 
     def encode(self, state: Dict[str, Any]) -> torch.Tensor:
-        """Encode a raw game state dictionary into a 22-D tensor.
+        """Encode a raw game state dictionary into a 30-D tensor.
 
         Args:
             state: Raw state from :meth:`server.logic.Frogger.get_state` or
@@ -116,7 +133,60 @@ class StateEncoder:
             features[base + 1] = float(nearest_obs["speed"]) / MAX_SPEED
             features[base + 2] = float(nearest_obs["width"]) / self.width
 
+        # Directional sensors (8 features)
+        frog_y = int(state["frog_y"])
+        for direction_idx, (dx, dy) in enumerate(SENSOR_DIRECTIONS):
+            sensor_dist = self._sensor_distance(
+                frog_x, frog_y, dx, dy, obstacles
+            )
+            features[22 + direction_idx] = sensor_dist
+
         return features
+
+    def _sensor_distance(
+        self,
+        frog_x: float,
+        frog_y: int,
+        dx: int,
+        dy: int,
+        obstacles: List[Dict[str, Any]],
+    ) -> float:
+        """Cast a ray in direction ``(dx, dy)`` and return nearest obstacle distance.
+
+        The returned value is normalised to ``[0, 1]`` where ``1.0`` means no
+        obstacle was found within :data:`SENSOR_MAX_RANGE` cells.
+
+        Args:
+            frog_x: Frog x-coordinate.
+            frog_y: Frog y-coordinate.
+            dx: X direction offset (-1, 0, or 1).
+            dy: Y direction offset (-1, 0, or 1).
+            obstacles: List of obstacle dictionaries.
+
+        Returns:
+            Normalised distance to the nearest obstacle in the given direction.
+        """
+        for dist in range(1, SENSOR_MAX_RANGE + 1):
+            check_x = (frog_x + dx * dist) % self.width
+            check_y = frog_y + dy * dist
+
+            for obs in obstacles:
+                if obs.get("y") != check_y:
+                    continue
+                obs_left = float(obs["x"])
+                obs_width = float(obs["width"])
+                obs_right = obs_left + obs_width
+
+                # Direct overlap
+                if obs_left <= check_x < obs_right:
+                    return dist / SENSOR_MAX_RANGE
+
+                # Wrap-around right
+                if obs_right > self.width:
+                    if 0 <= check_x < (obs_right - self.width):
+                        return dist / SENSOR_MAX_RANGE
+
+        return 1.0
 
     @staticmethod
     def _distance_to_obstacle(
@@ -160,9 +230,9 @@ class DQNNetwork(nn.Module):
     """Simple MLP DQN network mapping state vectors to Q-values.
 
     Architecture (default):
-        ``Input[batch, 22] -> Linear(22, 128) + ReLU
-                              -> Linear(128, 128) + ReLU
-                              -> Linear(128, 4)``
+        ``Input[batch, 30] -> Linear(30, 256) + ReLU
+                              -> Linear(256, 256) + ReLU
+                              -> Linear(256, 5)``
 
     No activation is applied to the output layer.
     """

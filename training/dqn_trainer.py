@@ -29,7 +29,7 @@ class DQNConfig:
     the Frogger environment characteristics.
     """
 
-    learning_rate: float = 1e-3
+    learning_rate: float = 5e-4
     """Adam learning rate."""
 
     gamma: float = 0.99
@@ -41,13 +41,13 @@ class DQNConfig:
     epsilon_end: float = 0.01
     """Final epsilon after decay."""
 
-    epsilon_decay_steps: int = 10000
+    epsilon_decay_steps: int = 20000
     """Number of steps over which epsilon linearly decays."""
 
-    buffer_size: int = 50000
+    buffer_size: int = 100000
     """Maximum capacity of the experience replay buffer."""
 
-    batch_size: int = 32
+    batch_size: int = 64
     """Number of transitions sampled per training update."""
 
     target_update_freq: int = 1000
@@ -63,7 +63,7 @@ class DQNConfig:
     update_frequency: int = 4
     """Perform a training update only once every *N* calls to :meth:`train_step`."""
 
-    hidden_size: int = 128
+    hidden_size: int = 256
     """Number of neurons in each hidden layer."""
 
     gradient_clip: float = 1.0
