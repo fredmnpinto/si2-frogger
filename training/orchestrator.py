@@ -200,10 +200,7 @@ class TrainingOrchestrator:
                 steps += 1
 
             scores.append(total_reward)
-            tqdm.write(
-                f"  Eval episode {eval_ep + 1}/{self.config.eval_episodes}: "
-                f"score={total_reward:.1f}, steps={steps}"
-            )
+            # Evaluation progress logging removed for cleaner output
 
         mean_score = sum(scores) / len(scores) if scores else 0.0
         return mean_score
