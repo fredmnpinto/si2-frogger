@@ -1,3 +1,7 @@
+plots/
+checkpoints/
+logs/
+
 .*hints
 
 # Byte-compiled / optimized / DLL files
