@@ -55,11 +55,12 @@ class FroggerEnv:
     def __init__(
         self,
         seed: int | None = None,
-        reward_forward: float = 1.0,
-        reward_checkpoint: float = 10.0,
-        reward_lap: float = 20.0,
-        reward_death: float = -10.0,
+        reward_forward: float = 5.0,
+        reward_checkpoint: float = 25.0,
+        reward_lap: float = 50.0,
+        reward_death: float = -5.0,
         reward_backward: float = -1.0,
+        reward_time: float = -0.05,
     ) -> None:
         """Create a new ``FroggerEnv``.
 
@@ -70,6 +71,7 @@ class FroggerEnv:
             reward_lap: Reward for completing a lap.
             reward_death: Penalty for dying.
             reward_backward: Penalty for moving backward.
+            reward_time: Small penalty every step to encourage faster progress.
         """
         self.game = Frogger(width=11, height=9, fps=30)
         self._dt = 1.0 / self.game.fps
@@ -82,6 +84,7 @@ class FroggerEnv:
         self.reward_lap = reward_lap
         self.reward_death = reward_death
         self.reward_backward = reward_backward
+        self.reward_time = reward_time
 
         if seed is not None:
             self.seed(seed)
@@ -234,7 +237,7 @@ class FroggerEnv:
         if self.game.lives < prev_lives:
             return self.reward_death
 
-        reward = 0.0
+        reward = self.reward_time  # Small penalty every step
 
         # Forward progress into a new lane.
         if self.game.max_y_reached_in_checkpoint > prev_max_y:

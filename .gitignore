@@ -153,7 +153,7 @@ activemq-data/
 .env
 .envrc
 .venv
-env/
+# env/ Dir for gym env class
 venv/
 ENV/
 env.bak/

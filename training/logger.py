@@ -71,9 +71,8 @@ class TrainingLogger:
         epsilon: float,
         loss: Optional[float],
         episode_length: int,
-        pbar=None,
     ) -> None:
-        """Log metrics for a completed episode.
+        """Log metrics for a completed episode to CSV only.
 
         Args:
             episode: Episode number (1-indexed).
@@ -82,30 +81,11 @@ class TrainingLogger:
             loss: Average loss for the episode, or ``None`` if no training
                 occurred.
             episode_length: Number of steps in the episode.
-            pbar: Optional tqdm progress bar instance. If provided, uses
-                ``pbar.write()`` for console output to avoid interfering
-                with the progress bar.
         """
         if total_reward > self._high_score:
             self._high_score = total_reward
 
-        loss_str = f"{loss:.4f}" if loss is not None and self._is_finite(loss) else "N/A"
-        epsilon_str = f"{epsilon:.4f}"
-        reward_str = f"{total_reward:.2f}"
-        high_score_str = f"{self._high_score:.2f}"
-
-        # Console log
-        line = (
-            f"Episode {episode:5d} | Reward: {reward_str:>8s} | "
-            f"Epsilon: {epsilon_str:>6s} | Loss: {loss_str:>8s} | "
-            f"Length: {episode_length:4d} | High Score: {high_score_str:>8s}"
-        )
-        if pbar is not None:
-            pbar.write(line)
-        else:
-            tqdm.write(line, file=self.console)
-
-        # CSV log
+        # CSV log only (no console output)
         if self._log_to_file and self._writer is not None:
             self._writer.writerow(
                 [
@@ -119,6 +99,20 @@ class TrainingLogger:
             )
             if self._csv_file is not None:
                 self._csv_file.flush()
+
+    def log_summary(self, episodes: int, best_score: float, final_epsilon: float) -> None:
+        """Print an end-of-training summary to the console.
+
+        Args:
+            episodes: Total number of episodes trained.
+            best_score: Best score achieved during training.
+            final_epsilon: Final epsilon value.
+        """
+        summary = (
+            f"\nTraining complete! Episodes: {episodes} | "
+            f"Best score: {best_score:.2f} | Final epsilon: {final_epsilon:.4f}\n"
+        )
+        tqdm.write(summary, file=self.console)
 
     def _is_finite(self, value: float) -> bool:
         """Check if a float value is finite (not NaN or Inf).

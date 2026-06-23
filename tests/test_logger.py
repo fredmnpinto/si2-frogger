@@ -57,7 +57,7 @@ class TestTrainingLogger(unittest.TestCase):
                 self.assertEqual(row[4], "20")
                 self.assertEqual(row[5], "10.5000")
 
-    def test_log_episode_console_output(self):
+    def test_log_episode_no_console_output(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             console = io.StringIO()
             logger = TrainingLogger(tmpdir, console=console)
@@ -65,9 +65,7 @@ class TestTrainingLogger(unittest.TestCase):
             logger.close()
 
             output = console.getvalue()
-            self.assertIn("Episode", output)
-            self.assertIn("10.50", output)
-            self.assertIn("1.0000", output)
+            self.assertEqual(output, "")
 
     def test_high_score_tracking(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -100,7 +98,7 @@ class TestTrainingLogger(unittest.TestCase):
                 self.assertEqual(row[3], "")
 
             output = console.getvalue()
-            self.assertIn("N/A", output)
+            self.assertEqual(output, "")
 
     def test_nan_loss(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -114,6 +112,19 @@ class TestTrainingLogger(unittest.TestCase):
                 next(reader)
                 row = next(reader)
                 self.assertEqual(row[3], "")
+
+    def test_log_summary(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            console = io.StringIO()
+            logger = TrainingLogger(tmpdir, console=console)
+            logger.log_summary(episodes=100, best_score=42.5, final_epsilon=0.01)
+            logger.close()
+
+            output = console.getvalue()
+            self.assertIn("Training complete!", output)
+            self.assertIn("100", output)
+            self.assertIn("42.50", output)
+            self.assertIn("0.0100", output)
 
     def test_context_manager(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -131,10 +142,9 @@ class TestTrainingLogger(unittest.TestCase):
 
             # CSV file should not exist
             self.assertFalse(os.path.isfile(os.path.join(tmpdir, "training.csv")))
-            # But console output should still work
+            # Console output should also be empty (no per-episode console logging)
             output = console.getvalue()
-            self.assertIn("Episode", output)
-            self.assertIn("10.50", output)
+            self.assertEqual(output, "")
 
     def test_log_to_file_false_context_manager(self):
         with tempfile.TemporaryDirectory() as tmpdir:

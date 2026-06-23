@@ -123,8 +123,9 @@ class TrainingOrchestrator:
         total_reward = 0.0
         episode_losses: list[float] = []
         steps = 0
+        max_steps = 500
 
-        while not done:
+        while not done and steps < max_steps:
             epsilon = self._get_current_epsilon()
             action = self.trainer.select_action(state_tensor, epsilon)
             next_state, reward, done, _ = self.env.step(action)
@@ -147,6 +148,10 @@ class TrainingOrchestrator:
             state_tensor = next_state_tensor
             steps += 1
 
+        # If truncated by step limit, mark as done
+        if steps >= max_steps and not done:
+            done = True
+
         avg_loss = sum(episode_losses) / len(episode_losses) if episode_losses else None
         return total_reward, steps, avg_loss
 
@@ -157,21 +162,35 @@ class TrainingOrchestrator:
             Mean total reward over the evaluation episodes.
         """
         scores: list[float] = []
-        for _ in range(self.config.eval_episodes):
+        max_eval_steps = 1000  # Prevent infinite episodes
+
+        for eval_ep in tqdm(
+            range(self.config.eval_episodes),
+            desc="Evaluating",
+            leave=False,
+            dynamic_ncols=True,
+        ):
             state = self.env.reset()
             state_tensor = self.encoder.encode(state).to(self.trainer.device)
             done = False
             total_reward = 0.0
+            steps = 0
 
-            while not done:
+            while not done and steps < max_eval_steps:
                 action = self.trainer.select_action(state_tensor, epsilon=0.0)
                 next_state, reward, done, _ = self.env.step(action)
                 state_tensor = self.encoder.encode(next_state).to(self.trainer.device)
                 total_reward += reward
+                steps += 1
 
             scores.append(total_reward)
+            tqdm.write(
+                f"  Eval episode {eval_ep + 1}/{self.config.eval_episodes}: "
+                f"score={total_reward:.1f}, steps={steps}"
+            )
 
-        return sum(scores) / len(scores) if scores else 0.0
+        mean_score = sum(scores) / len(scores) if scores else 0.0
+        return mean_score
 
     def run(self) -> Dict[str, Any]:
         """Run the full training loop.
@@ -192,48 +211,56 @@ class TrainingOrchestrator:
             )
 
         try:
-            with tqdm(
-                total=self.config.episodes,
+            pbar = tqdm(
+                range(self._episode + 1, self.config.episodes + 1),
                 initial=self._episode,
+                total=self.config.episodes,
                 desc="Training",
-                file=sys.stdout,
                 dynamic_ncols=True,
-            ) as pbar:
-                for episode in range(self._episode + 1, self.config.episodes + 1):
-                    pbar.update(1)
-                    self._episode = episode
-                    total_reward, length, loss = self._run_episode()
+            )
 
-                    pbar.set_postfix(
-                        {
-                            "reward": f"{total_reward:.1f}",
-                            "eps": f"{self._get_current_epsilon():.3f}",
-                            "best": f"{self._best_score:.1f}",
-                        }
+            for episode in pbar:
+                self._episode = episode
+                total_reward, length, loss = self._run_episode()
+
+                pbar.set_postfix(
+                    reward=f"{total_reward:.1f}",
+                    eps=f"{self._get_current_epsilon():.3f}",
+                    best=f"{self._best_score:.1f}",
+                )
+
+                self.logger.log_episode(
+                    episode, total_reward, self._get_current_epsilon(), loss, length
+                )
+
+                # Periodic checkpoint
+                if self.checkpoint_manager.should_save(episode):
+                    self.checkpoint_manager.save(
+                        episode,
+                        self._get_current_epsilon(),
+                        self._best_score,
                     )
 
-                    self.logger.log_episode(
-                        episode, total_reward, self._get_current_epsilon(), loss, length, pbar=pbar
+                # Periodic evaluation and best-model tracking
+                if episode % self.config.eval_freq == 0:
+                    tqdm.write(f"\n{'='*50}")
+                    tqdm.write(f"Running evaluation at episode {episode}...")
+
+                    eval_score = self._evaluate()
+
+                    tqdm.write(f"Evaluation complete: mean score = {eval_score:.2f}")
+                    tqdm.write(f"{'='*50}\n")
+
+                    self.checkpoint_manager.save_best(
+                        episode,
+                        self._get_current_epsilon(),
+                        eval_score,
                     )
+                    if eval_score > self._best_score:
+                        self._best_score = eval_score
+                        tqdm.write(f"*** New best score: {self._best_score:.2f} ***\n")
 
-                    # Periodic checkpoint
-                    if self.checkpoint_manager.should_save(episode):
-                        self.checkpoint_manager.save(
-                            episode,
-                            self._get_current_epsilon(),
-                            self._best_score,
-                        )
-
-                    # Periodic evaluation and best-model tracking
-                    if episode % self.config.eval_freq == 0:
-                        eval_score = self._evaluate()
-                        self.checkpoint_manager.save_best(
-                            episode,
-                            self._get_current_epsilon(),
-                            eval_score,
-                        )
-                        if eval_score > self._best_score:
-                            self._best_score = eval_score
+            pbar.close()
 
         except RuntimeError as exc:
             if "Non-finite loss" in str(exc):
@@ -254,6 +281,13 @@ class TrainingOrchestrator:
         finally:
             if self.logger is not None:
                 self.logger.close()
+
+        if self.logger is not None:
+            self.logger.log_summary(
+                self._episode,
+                self._best_score,
+                self._get_current_epsilon(),
+            )
 
         return {
             "episodes": self._episode,

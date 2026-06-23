@@ -115,23 +115,28 @@ class TestStateEncoder(unittest.TestCase):
         tensor = encoder.encode(state)
 
         # Lane 1 features start at index 4
-        # Distance from frog_x=5 to obs at x=8 (width=1) on circle of 11:
-        # dx = (5 - 8) % 11 = 8; dx > width (1), so dist = min(8-1, 11-8) = min(7, 3) = 3
-        # Normalized: 3/11 ≈ 0.2727
-        self.assertAlmostEqual(tensor[4].item(), 3.0 / 11.0, places=5)
+        # Frog body center at 5.5, half-width 0.4
+        # Distance to obs at x=8 (width=1) on circle of 11:
+        # dx = (5.5 - 8.0) % 11 = 8.5; dx > width + half_width (1.4), so
+        # dist = min(8.5 - 1.0 - 0.4, 11 - 8.5 - 0.4) = min(7.1, 2.1) = 2.1
+        # Normalized: 2.1/11 ≈ 0.1909
+        self.assertAlmostEqual(tensor[4].item(), 2.1 / 11.0, places=5)
         # Speed of nearest obstacle (the one at x=8) is 0.5
         self.assertAlmostEqual(tensor[5].item(), 0.5 / 1.8, places=5)
 
     def test_wrap_around_distance(self):
         encoder = StateEncoder(width=10)
         # Frog at 1, obstacle at 8 with width 2 (covers [8, 10] which wraps to [8, 0])
+        # Frog body center at 1.5, half-width 0.4
+        # dx = (1.5 - 8.0) % 10 = 3.5; dx > 2 + 0.4 = 2.4, so
+        # dist = min(3.5 - 2.0 - 0.4, 10 - 3.5 - 0.4) = min(1.1, 6.1) = 1.1
         dist = encoder._distance_to_obstacle(1.0, 8.0, 2.0, width=10.0)
-        # dx = (1 - 8) % 10 = 3; dx > 2, so dist = min(3-2, 10-3) = min(1, 7) = 1
-        self.assertEqual(dist, 1.0)
+        self.assertEqual(dist, 1.1)
 
         # Frog at 9, obstacle at 8 with width 2 (covers [8, 10])
+        # Frog body center at 9.5, half-width 0.4
+        # dx = (9.5 - 8.0) % 10 = 1.5; dx <= 2 + 0.4 = 2.4, so dist = 0 (overlap)
         dist = encoder._distance_to_obstacle(9.0, 8.0, 2.0, width=10.0)
-        # dx = (9 - 8) % 10 = 1; dx <= 2, so dist = 0 (overlap)
         self.assertEqual(dist, 0.0)
 
 

@@ -122,7 +122,7 @@ class StateEncoder:
     def _distance_to_obstacle(
         frog_x: float, obs_x: float, obs_w: float, width: float = 11.0
     ) -> float:
-        """Compute the minimum wrap-around distance from frog to an obstacle.
+        """Compute minimum wrap-around distance from frog BODY to obstacle.
 
         The lane is treated as a circle of circumference *width*.  If the frog
         overlaps the obstacle the distance is ``0``.
@@ -136,10 +136,24 @@ class StateEncoder:
         Returns:
             Minimum distance to the obstacle (``0`` if overlapping).
         """
-        dx = (frog_x - obs_x) % width
-        if dx <= obs_w:
+        # Frog body: [frog_x + 0.1, frog_x + 0.9]
+        frog_left = frog_x + 0.1
+        frog_right = frog_x + 0.9
+        frog_center = (frog_left + frog_right) / 2  # = frog_x + 0.5
+        frog_half_width = 0.4
+
+        # Compute distance from frog center to obstacle
+        dx = (frog_center - obs_x) % width
+
+        # Check collision (accounting for frog body width)
+        if dx <= obs_w + frog_half_width:
             return 0.0
-        return min(dx - obs_w, width - dx)
+
+        # Distance from frog's nearest edge to obstacle's nearest edge
+        return min(
+            dx - obs_w - frog_half_width,
+            width - dx - frog_half_width
+        )
 
 
 class DQNNetwork(nn.Module):

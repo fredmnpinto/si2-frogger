@@ -41,11 +41,12 @@ class TestFroggerEnv(unittest.TestCase):
 
     def test_init_default(self):
         env = FroggerEnv()
-        self.assertEqual(env.reward_forward, 1.0)
-        self.assertEqual(env.reward_checkpoint, 10.0)
-        self.assertEqual(env.reward_lap, 20.0)
-        self.assertEqual(env.reward_death, -10.0)
+        self.assertEqual(env.reward_forward, 5.0)
+        self.assertEqual(env.reward_checkpoint, 25.0)
+        self.assertEqual(env.reward_lap, 50.0)
+        self.assertEqual(env.reward_death, -5.0)
         self.assertEqual(env.reward_backward, -1.0)
+        self.assertEqual(env.reward_time, -0.05)
 
     def test_init_custom_rewards(self):
         env = FroggerEnv(
@@ -201,7 +202,7 @@ class TestFroggerEnv(unittest.TestCase):
         )
         state, reward, done, info = env.step("NORTH")
         self.assertTrue(done)
-        self.assertEqual(reward, -10.0)
+        self.assertEqual(reward, -5.0)
         self.assertEqual(info["lives"], 0)
 
     def test_death_after_action(self):
@@ -214,7 +215,7 @@ class TestFroggerEnv(unittest.TestCase):
         )
         state, reward, done, info = env.step("NORTH")
         self.assertTrue(done)
-        self.assertEqual(reward, -10.0)
+        self.assertEqual(reward, -5.0)
         self.assertEqual(info["lives"], 0)
 
     def test_reward_forward_progress(self):
@@ -222,18 +223,18 @@ class TestFroggerEnv(unittest.TestCase):
         env.reset()
         env.game.obstacles = []
         _, reward, _, _ = env.step("NORTH")
-        self.assertEqual(reward, 1.0)
+        self.assertEqual(reward, 4.95)
 
     def test_reward_no_double_forward(self):
         env = FroggerEnv()
         env.reset()
         env.game.obstacles = []
-        _, r1, _, _ = env.step("NORTH")   # y=0 -> y=1, forward +1
-        _, r2, _, _ = env.step("SOUTH")   # y=1 -> y=0, backward -1
-        _, r3, _, _ = env.step("NORTH")   # y=0 -> y=1, no extra forward
-        self.assertEqual(r1, 1.0)
-        self.assertEqual(r2, -1.0)
-        self.assertEqual(r3, 0.0)
+        _, r1, _, _ = env.step("NORTH")   # y=0 -> y=1, forward +5 + time -0.05
+        _, r2, _, _ = env.step("SOUTH")   # y=1 -> y=0, backward -1 + time -0.05
+        _, r3, _, _ = env.step("NORTH")   # y=0 -> y=1, no extra forward + time -0.05
+        self.assertEqual(r1, 4.95)
+        self.assertEqual(r2, -1.05)
+        self.assertEqual(r3, -0.05)
 
     def test_reward_backward(self):
         env = FroggerEnv()
@@ -241,7 +242,7 @@ class TestFroggerEnv(unittest.TestCase):
         env.game.obstacles = []
         env.step("NORTH")  # y=0 -> y=1
         _, reward, _, _ = env.step("SOUTH")
-        self.assertEqual(reward, -1.0)
+        self.assertEqual(reward, -1.05)
 
     def test_reward_checkpoint(self):
         env = FroggerEnv()
@@ -251,7 +252,7 @@ class TestFroggerEnv(unittest.TestCase):
             env.step("NORTH")
         # 4th move reaches y=4 (checkpoint)
         _, reward, _, _ = env.step("NORTH")
-        self.assertEqual(reward, 10.0)
+        self.assertEqual(reward, 24.95)
 
     def test_reward_lap(self):
         env = FroggerEnv()
@@ -261,7 +262,7 @@ class TestFroggerEnv(unittest.TestCase):
             env.step("NORTH")
         # 8th move reaches y=8 (lap completion)
         _, reward, _, _ = env.step("NORTH")
-        self.assertEqual(reward, 20.0)
+        self.assertEqual(reward, 49.95)
 
     def test_reward_death(self):
         env = FroggerEnv()
@@ -272,7 +273,7 @@ class TestFroggerEnv(unittest.TestCase):
             Obstacle(x=5.0, y=1, width=2.5, speed=0.0, type="car", variant="test")
         )
         _, reward, done, _ = env.step("NORTH")
-        self.assertEqual(reward, -10.0)
+        self.assertEqual(reward, -5.0)
         self.assertTrue(done)
 
     def test_info_dict(self):
@@ -311,7 +312,7 @@ class TestFroggerEnv(unittest.TestCase):
         env.reset()
         env.game.obstacles = []
         _, reward, _, _ = env.step("NORTH")
-        self.assertEqual(reward, 5.0)
+        self.assertEqual(reward, 4.95)
 
         env.reset()
         env.game.obstacles = []
