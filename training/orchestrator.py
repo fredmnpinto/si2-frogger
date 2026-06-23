@@ -15,6 +15,9 @@ from typing import Any, Dict, Optional
 
 import torch
 
+from rich.progress import ProgressColumn
+from rich.text import Text
+
 from env.frogger_env import FroggerEnv
 from models.dqn_network import StateEncoder
 from training.checkpoint import CheckpointManager
@@ -22,6 +25,65 @@ from training.config import TrainingConfig
 from training.dqn_trainer import DQNTrainer
 from training.high_score_tracker import HighScoreTracker
 from training.logger import TrainingLogger
+
+
+class SmoothedTimeRemainingColumn(ProgressColumn):
+    """Renders estimated time remaining with exponential smoothing.
+
+    Uses a smoothed speed estimate to reduce jitter when task
+    completion rate varies (e.g. episodes of very different lengths).
+    """
+
+    def __init__(self, smoothing_factor: float = 0.1, **kwargs):
+        """Initialize with smoothing factor.
+
+        Args:
+            smoothing_factor: Weight for new observations
+                (0.1 = 10% new, 90% history).
+        """
+        self.smoothing_factor = smoothing_factor
+        self._smoothed_speed: Optional[float] = None
+        self._last_update_time: float = 0.0
+        self._last_rendered: str = ""
+        super().__init__(**kwargs)
+
+    def render(self, task) -> Text:
+        """Render smoothed time remaining."""
+        if task.total is None or task.speed is None:
+            return Text("--:--", style="progress.remaining")
+
+        # Update smoothed speed at most once per second to reduce flicker,
+        # but always initialize on first call.
+        now = time.time()
+        if self._smoothed_speed is None or now - self._last_update_time >= 1.0:
+            self._last_update_time = now
+            current_speed = task.speed
+            if self._smoothed_speed is None:
+                self._smoothed_speed = current_speed
+            else:
+                self._smoothed_speed = (
+                    self.smoothing_factor * current_speed
+                    + (1 - self.smoothing_factor) * self._smoothed_speed
+                )
+
+        # Calculate ETA from smoothed speed
+        remaining = task.total - task.completed
+        if remaining <= 0 or self._smoothed_speed is None or self._smoothed_speed <= 0:
+            return Text("00:00", style="progress.remaining")
+
+        eta_seconds = remaining / self._smoothed_speed
+
+        # Format as MM:SS or HH:MM:SS
+        if eta_seconds < 3600:
+            minutes, seconds = divmod(int(eta_seconds), 60)
+            text = f"{minutes:02d}:{seconds:02d}"
+        else:
+            hours, remainder = divmod(int(eta_seconds), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            text = f"{hours:d}:{minutes:02d}:{seconds:02d}"
+
+        self._last_rendered = text
+        return Text(text, style="progress.remaining")
 
 
 class TrainingOrchestrator:
@@ -255,7 +317,7 @@ class TrainingOrchestrator:
             TextColumn,
             BarColumn,
             TaskProgressColumn,
-            TimeRemainingColumn,
+            TimeElapsedColumn,
             MofNCompleteColumn,
         )
         from rich.live import Live
@@ -267,7 +329,7 @@ class TrainingOrchestrator:
             BarColumn(bar_width=None),
             TaskProgressColumn(),
             TextColumn("•"),
-            TimeRemainingColumn(),
+            SmoothedTimeRemainingColumn(smoothing_factor=0.05),
             TextColumn("• EPS: {task.fields[epsilon]:.3f}"),
             TextColumn("• Best: {task.fields[best_score]:.1f}"),
             TextColumn("• Reward: {task.fields[reward]:.1f}"),

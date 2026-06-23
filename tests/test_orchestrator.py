@@ -17,7 +17,7 @@ from training.checkpoint import CheckpointManager
 from training.config import TrainingConfig
 from training.dqn_trainer import DQNConfig, DQNTrainer
 from training.logger import TrainingLogger
-from training.orchestrator import TrainingOrchestrator
+from training.orchestrator import TrainingOrchestrator, SmoothedTimeRemainingColumn
 
 
 class MockEnv:
@@ -512,6 +512,98 @@ class TestTrainingOrchestrator(unittest.TestCase):
                 # MockEnv returns 0 laps, so steps_per_lap should be 0.00
                 self.assertEqual(rows[0][header.index("laps_completed")], "0")
                 self.assertEqual(rows[0][header.index("steps_per_lap")], "0.00")
+
+
+class TestSmoothedTimeRemainingColumn(unittest.TestCase):
+    """Tests for SmoothedTimeRemainingColumn."""
+
+    def _make_task(self, total=None, completed=0, speed=None):
+        """Create a minimal mock task."""
+        task = mock.MagicMock()
+        task.total = total
+        task.completed = completed
+        task.speed = speed
+        return task
+
+    def test_render_no_total_returns_dashes(self):
+        col = SmoothedTimeRemainingColumn()
+        task = self._make_task(total=None, speed=1.0)
+        text = col.render(task)
+        self.assertEqual(text.plain, "--:--")
+
+    def test_render_no_speed_returns_dashes(self):
+        col = SmoothedTimeRemainingColumn()
+        task = self._make_task(total=100, speed=None)
+        text = col.render(task)
+        self.assertEqual(text.plain, "--:--")
+
+    def test_render_zero_remaining_returns_zero(self):
+        col = SmoothedTimeRemainingColumn()
+        task = self._make_task(total=100, completed=100, speed=1.0)
+        text = col.render(task)
+        self.assertEqual(text.plain, "00:00")
+
+    def test_render_zero_speed_returns_zero(self):
+        col = SmoothedTimeRemainingColumn()
+        task = self._make_task(total=100, completed=0, speed=0.0)
+        text = col.render(task)
+        self.assertEqual(text.plain, "00:00")
+
+    def test_first_call_sets_smoothed_speed(self):
+        col = SmoothedTimeRemainingColumn(smoothing_factor=0.1)
+        task = self._make_task(total=100, completed=0, speed=10.0)
+        with mock.patch("training.orchestrator.time.time", return_value=0.0):
+            col.render(task)
+        self.assertEqual(col._smoothed_speed, 10.0)
+
+    def test_smoothing_applied_on_subsequent_calls(self):
+        col = SmoothedTimeRemainingColumn(smoothing_factor=0.5)
+        task = self._make_task(total=100, completed=0, speed=10.0)
+        with mock.patch("training.orchestrator.time.time", return_value=0.0):
+            col.render(task)
+        # Second call 2 seconds later with different speed
+        task.speed = 20.0
+        with mock.patch("training.orchestrator.time.time", return_value=2.0):
+            col.render(task)
+        # 0.5 * 20 + 0.5 * 10 = 15
+        self.assertEqual(col._smoothed_speed, 15.0)
+
+    def test_no_update_within_one_second(self):
+        col = SmoothedTimeRemainingColumn(smoothing_factor=0.5)
+        task = self._make_task(total=100, completed=0, speed=10.0)
+        with mock.patch("training.orchestrator.time.time", return_value=0.0):
+            col.render(task)
+        # Call again only 0.5s later — smoothed speed should NOT update
+        task.speed = 20.0
+        with mock.patch("training.orchestrator.time.time", return_value=0.5):
+            col.render(task)
+        self.assertEqual(col._smoothed_speed, 10.0)
+
+    def test_eta_format_under_one_hour(self):
+        col = SmoothedTimeRemainingColumn()
+        task = self._make_task(total=100, completed=0, speed=1.0)
+        with mock.patch("training.orchestrator.time.time", return_value=0.0):
+            text = col.render(task)
+        # 100 remaining at 1.0/sec = 100s = 01:40
+        self.assertEqual(text.plain, "01:40")
+
+    def test_eta_format_over_one_hour(self):
+        col = SmoothedTimeRemainingColumn()
+        task = self._make_task(total=4000, completed=0, speed=1.0)
+        with mock.patch("training.orchestrator.time.time", return_value=0.0):
+            text = col.render(task)
+        # 4000 remaining at 1.0/sec = 4000s = 1:06:40
+        self.assertEqual(text.plain, "1:06:40")
+
+    def test_render_returns_cached_text_when_no_update(self):
+        col = SmoothedTimeRemainingColumn()
+        task = self._make_task(total=100, completed=0, speed=1.0)
+        with mock.patch("training.orchestrator.time.time", return_value=0.0):
+            text1 = col.render(task)
+        # Same task, called again immediately — should return same text
+        with mock.patch("training.orchestrator.time.time", return_value=0.1):
+            text2 = col.render(task)
+        self.assertEqual(text1.plain, text2.plain)
 
 
 if __name__ == "__main__":
