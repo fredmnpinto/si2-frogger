@@ -21,7 +21,7 @@ class TrainingLogger:
 
     The CSV format is::
 
-        episode,total_reward,epsilon,loss,episode_length,high_score
+        episode,total_reward,epsilon,loss,episode_length,high_score,max_y
 
     Console output prints a formatted line per episode.
     """
@@ -57,7 +57,7 @@ class TrainingLogger:
             self._csv_file = open(self._csv_path, "w", newline="", encoding="utf-8")
             self._writer = csv.writer(self._csv_file)
             self._writer.writerow(
-                ["episode", "total_reward", "epsilon", "loss", "episode_length", "high_score"]
+                ["episode", "total_reward", "epsilon", "loss", "episode_length", "high_score", "max_y"]
             )
             self._csv_file.flush()
         else:
@@ -71,6 +71,7 @@ class TrainingLogger:
         epsilon: float,
         loss: Optional[float],
         episode_length: int,
+        max_y: int = 0,
     ) -> None:
         """Log metrics for a completed episode to CSV only.
 
@@ -81,6 +82,7 @@ class TrainingLogger:
             loss: Average loss for the episode, or ``None`` if no training
                 occurred.
             episode_length: Number of steps in the episode.
+            max_y: Maximum y-position (lane) reached during the episode.
         """
         if total_reward > self._high_score:
             self._high_score = total_reward
@@ -95,6 +97,7 @@ class TrainingLogger:
                     f"{loss:.4f}" if loss is not None and self._is_finite(loss) else "",
                     episode_length,
                     f"{self._high_score:.4f}",
+                    max_y,
                 ]
             )
             if self._csv_file is not None:

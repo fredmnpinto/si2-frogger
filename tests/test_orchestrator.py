@@ -55,7 +55,7 @@ class MockEnv:
             "win": False,
             "obstacles": [],
         }
-        return state, 1.0, done, {"episode_length": self._step_count}
+        return state, 1.0, done, {"episode_length": self._step_count, "max_y_reached": self._step_count}
 
     def seed(self, seed):
         pass

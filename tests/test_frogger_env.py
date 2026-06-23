@@ -12,27 +12,27 @@ class TestDiscrete(unittest.TestCase):
     """Tests for the minimal Discrete action space helper."""
 
     def test_init_positive(self):
-        d = Discrete(4)
-        self.assertEqual(d.n, 4)
+        d = Discrete(5)
+        self.assertEqual(d.n, 5)
 
     def test_init_zero_raises(self):
         with self.assertRaises(ValueError):
             Discrete(0)
 
     def test_sample_range(self):
-        d = Discrete(4)
+        d = Discrete(5)
         for _ in range(20):
-            self.assertIn(d.sample(), range(4))
+            self.assertIn(d.sample(), range(5))
 
     def test_contains_valid(self):
-        d = Discrete(4)
+        d = Discrete(5)
         self.assertTrue(d.contains(0))
-        self.assertTrue(d.contains(3))
+        self.assertTrue(d.contains(4))
 
     def test_contains_invalid(self):
-        d = Discrete(4)
+        d = Discrete(5)
         self.assertFalse(d.contains(-1))
-        self.assertFalse(d.contains(4))
+        self.assertFalse(d.contains(5))
         self.assertFalse(d.contains("NORTH"))
 
 
@@ -41,12 +41,13 @@ class TestFroggerEnv(unittest.TestCase):
 
     def test_init_default(self):
         env = FroggerEnv()
-        self.assertEqual(env.reward_forward, 5.0)
-        self.assertEqual(env.reward_checkpoint, 25.0)
-        self.assertEqual(env.reward_lap, 50.0)
-        self.assertEqual(env.reward_death, -5.0)
-        self.assertEqual(env.reward_backward, -1.0)
-        self.assertEqual(env.reward_time, -0.05)
+        self.assertEqual(env.reward_forward, 10.0)
+        self.assertEqual(env.reward_checkpoint, 50.0)
+        self.assertEqual(env.reward_lap, 100.0)
+        self.assertEqual(env.reward_death, -10.0)
+        self.assertEqual(env.reward_backward, -2.0)
+        self.assertEqual(env.reward_time, -0.1)
+        self.assertEqual(env.reward_stay, -0.5)
 
     def test_init_custom_rewards(self):
         env = FroggerEnv(
@@ -64,7 +65,7 @@ class TestFroggerEnv(unittest.TestCase):
 
     def test_action_space(self):
         env = FroggerEnv()
-        self.assertEqual(env.action_space.n, 4)
+        self.assertEqual(env.action_space.n, 5)
 
     def test_observation_space(self):
         env = FroggerEnv()
@@ -138,7 +139,7 @@ class TestFroggerEnv(unittest.TestCase):
         env = FroggerEnv()
         env.reset()
         env.game.obstacles = []
-        for i in range(4):
+        for i in range(5):
             env.reset()
             env.game.obstacles = []
             state, reward, done, info = env.step(i)
@@ -202,7 +203,7 @@ class TestFroggerEnv(unittest.TestCase):
         )
         state, reward, done, info = env.step("NORTH")
         self.assertTrue(done)
-        self.assertEqual(reward, -5.0)
+        self.assertEqual(reward, -10.0)
         self.assertEqual(info["lives"], 0)
 
     def test_death_after_action(self):
@@ -215,7 +216,7 @@ class TestFroggerEnv(unittest.TestCase):
         )
         state, reward, done, info = env.step("NORTH")
         self.assertTrue(done)
-        self.assertEqual(reward, -5.0)
+        self.assertEqual(reward, -10.0)
         self.assertEqual(info["lives"], 0)
 
     def test_reward_forward_progress(self):
@@ -223,18 +224,19 @@ class TestFroggerEnv(unittest.TestCase):
         env.reset()
         env.game.obstacles = []
         _, reward, _, _ = env.step("NORTH")
-        self.assertEqual(reward, 4.95)
+        # forward 10 + progress 1 + time -0.1 = 10.9
+        self.assertEqual(reward, 10.9)
 
     def test_reward_no_double_forward(self):
         env = FroggerEnv()
         env.reset()
         env.game.obstacles = []
-        _, r1, _, _ = env.step("NORTH")   # y=0 -> y=1, forward +5 + time -0.05
-        _, r2, _, _ = env.step("SOUTH")   # y=1 -> y=0, backward -1 + time -0.05
-        _, r3, _, _ = env.step("NORTH")   # y=0 -> y=1, no extra forward + time -0.05
-        self.assertEqual(r1, 4.95)
-        self.assertEqual(r2, -1.05)
-        self.assertEqual(r3, -0.05)
+        _, r1, _, _ = env.step("NORTH")   # y=0 -> y=1, forward +10 + progress +1 + time -0.1
+        _, r2, _, _ = env.step("SOUTH")   # y=1 -> y=0, backward -2 + time -0.1
+        _, r3, _, _ = env.step("NORTH")   # y=0 -> y=1, no extra forward + time -0.1
+        self.assertEqual(r1, 10.9)
+        self.assertEqual(r2, -2.1)
+        self.assertEqual(r3, -0.1)
 
     def test_reward_backward(self):
         env = FroggerEnv()
@@ -242,7 +244,7 @@ class TestFroggerEnv(unittest.TestCase):
         env.game.obstacles = []
         env.step("NORTH")  # y=0 -> y=1
         _, reward, _, _ = env.step("SOUTH")
-        self.assertEqual(reward, -1.05)
+        self.assertEqual(reward, -2.1)
 
     def test_reward_checkpoint(self):
         env = FroggerEnv()
@@ -250,9 +252,10 @@ class TestFroggerEnv(unittest.TestCase):
         env.game.obstacles = []
         for _ in range(3):
             env.step("NORTH")
-        # 4th move reaches y=4 (checkpoint)
+        # 4th move reaches y=4 (checkpoint). max_y is reset to 0 by checkpoint logic,
+        # so no forward/progress reward is awarded for this step.
         _, reward, _, _ = env.step("NORTH")
-        self.assertEqual(reward, 24.95)
+        self.assertEqual(reward, 49.9)
 
     def test_reward_lap(self):
         env = FroggerEnv()
@@ -260,9 +263,10 @@ class TestFroggerEnv(unittest.TestCase):
         env.game.obstacles = []
         for _ in range(7):
             env.step("NORTH")
-        # 8th move reaches y=8 (lap completion)
+        # 8th move reaches y=8 (lap completion). max_y is reset to 0 by lap logic,
+        # so no forward/progress reward is awarded for this step.
         _, reward, _, _ = env.step("NORTH")
-        self.assertEqual(reward, 49.95)
+        self.assertEqual(reward, 99.9)
 
     def test_reward_death(self):
         env = FroggerEnv()
@@ -273,7 +277,7 @@ class TestFroggerEnv(unittest.TestCase):
             Obstacle(x=5.0, y=1, width=2.5, speed=0.0, type="car", variant="test")
         )
         _, reward, done, _ = env.step("NORTH")
-        self.assertEqual(reward, -5.0)
+        self.assertEqual(reward, -10.0)
         self.assertTrue(done)
 
     def test_info_dict(self):
@@ -289,6 +293,7 @@ class TestFroggerEnv(unittest.TestCase):
             "high_score",
             "game_over",
             "win",
+            "max_y_reached",
         }
         self.assertTrue(required_keys.issubset(info.keys()))
 
@@ -301,6 +306,21 @@ class TestFroggerEnv(unittest.TestCase):
         _, _, _, info = env.step("NORTH")
         self.assertEqual(info["episode_length"], 2)
 
+    def test_max_y_reached_tracking(self):
+        env = FroggerEnv()
+        env.reset()
+        env.game.obstacles = []
+        _, _, _, info = env.step("NORTH")
+        self.assertEqual(info["max_y_reached"], 1)
+        _, _, _, info = env.step("NORTH")
+        self.assertEqual(info["max_y_reached"], 2)
+        _, _, _, info = env.step("SOUTH")
+        self.assertEqual(info["max_y_reached"], 2)
+        _, _, _, info = env.step("NORTH")
+        self.assertEqual(info["max_y_reached"], 2)
+        _, _, _, info = env.step("NORTH")
+        self.assertEqual(info["max_y_reached"], 3)
+
     def test_custom_reward_weights(self):
         env = FroggerEnv(
             reward_forward=5.0,
@@ -312,7 +332,8 @@ class TestFroggerEnv(unittest.TestCase):
         env.reset()
         env.game.obstacles = []
         _, reward, _, _ = env.step("NORTH")
-        self.assertEqual(reward, 4.95)
+        # forward 5 + progress 1 + time -0.1 = 5.9
+        self.assertEqual(reward, 5.9)
 
         env.reset()
         env.game.obstacles = []
@@ -323,6 +344,40 @@ class TestFroggerEnv(unittest.TestCase):
         _, reward, done, _ = env.step("NORTH")
         self.assertEqual(reward, -50.0)
         self.assertTrue(done)
+
+    def test_stay_action(self):
+        env = FroggerEnv()
+        env.reset()
+        env.game.obstacles = []
+        _, reward, _, _ = env.step("STAY")
+        self.assertEqual(reward, -0.6)  # stay -0.5 + time -0.1
+
+    def test_stay_action_int(self):
+        env = FroggerEnv()
+        env.reset()
+        env.game.obstacles = []
+        _, reward, _, _ = env.step(4)
+        self.assertEqual(reward, -0.6)
+
+    def test_stay_resets_cooldown(self):
+        env = FroggerEnv()
+        env.reset()
+        env.game.obstacles = []
+        env.step("STAY")
+        # After STAY, frames_since_last_move should be reset to 0,
+        # so the next step should wait through the full cooldown.
+        original_update = env.game.update
+        call_count = [0]
+
+        def counting_update(dt: float) -> None:
+            call_count[0] += 1
+            original_update(dt)
+
+        env.game.update = counting_update
+        call_count[0] = 0
+        env.step("NORTH")
+        # Should have 4 cooldown ticks + 1 final update = 5 calls
+        self.assertEqual(call_count[0], 5)
 
 
 if __name__ == "__main__":

@@ -48,19 +48,20 @@ class FroggerEnv:
     worry about it.
     """
 
-    VALID_ACTIONS = ("NORTH", "SOUTH", "EAST", "WEST")
-    ACTION_TO_INDEX = {"NORTH": 0, "SOUTH": 1, "EAST": 2, "WEST": 3}
-    INDEX_TO_ACTION = {0: "NORTH", 1: "SOUTH", 2: "EAST", 3: "WEST"}
+    VALID_ACTIONS = ("NORTH", "SOUTH", "EAST", "WEST", "STAY")
+    ACTION_TO_INDEX = {"NORTH": 0, "SOUTH": 1, "EAST": 2, "WEST": 3, "STAY": 4}
+    INDEX_TO_ACTION = {0: "NORTH", 1: "SOUTH", 2: "EAST", 3: "WEST", 4: "STAY"}
 
     def __init__(
         self,
         seed: int | None = None,
-        reward_forward: float = 5.0,
-        reward_checkpoint: float = 25.0,
-        reward_lap: float = 50.0,
-        reward_death: float = -5.0,
-        reward_backward: float = -1.0,
-        reward_time: float = -0.05,
+        reward_forward: float = 10.0,
+        reward_checkpoint: float = 50.0,
+        reward_lap: float = 100.0,
+        reward_death: float = -10.0,
+        reward_backward: float = -2.0,
+        reward_time: float = -0.1,
+        reward_stay: float = -0.5,
     ) -> None:
         """Create a new ``FroggerEnv``.
 
@@ -72,12 +73,15 @@ class FroggerEnv:
             reward_death: Penalty for dying.
             reward_backward: Penalty for moving backward.
             reward_time: Small penalty every step to encourage faster progress.
+            reward_stay: Penalty for staying still to discourage idle behaviour.
         """
         self.game = Frogger(width=11, height=9, fps=30)
         self._dt = 1.0 / self.game.fps
         self._done = True
         self._episode_length = 0
         self._prev_frog_y = 0
+        self._prev_frog_x = 0.0
+        self._max_y_reached = 0
 
         self.reward_forward = reward_forward
         self.reward_checkpoint = reward_checkpoint
@@ -85,6 +89,7 @@ class FroggerEnv:
         self.reward_death = reward_death
         self.reward_backward = reward_backward
         self.reward_time = reward_time
+        self.reward_stay = reward_stay
 
         if seed is not None:
             self.seed(seed)
@@ -103,8 +108,8 @@ class FroggerEnv:
 
     @property
     def action_space(self) -> Discrete:
-        """Return the action space (4 discrete actions)."""
-        return Discrete(4)
+        """Return the action space (5 discrete actions)."""
+        return Discrete(5)
 
     @property
     def observation_space(self) -> Dict[str, Any]:
@@ -132,6 +137,8 @@ class FroggerEnv:
         self._done = False
         self._episode_length = 0
         self._prev_frog_y = self.game.frog_y
+        self._prev_frog_x = self.game.frog_x
+        self._max_y_reached = 0
         return self.game.get_state()
 
     def _get_info(self) -> Dict[str, Any]:
@@ -144,6 +151,7 @@ class FroggerEnv:
             "high_score": self.game.high_score,
             "game_over": self.game.game_over,
             "win": self.game.win,
+            "max_y_reached": self._max_y_reached,
         }
 
     def step(self, action: Union[int, str]) -> tuple[Dict[str, Any], float, bool, Dict[str, Any]]:
@@ -185,6 +193,7 @@ class FroggerEnv:
         prev_checkpoint = self.game.current_lap_checkpoint
         prev_max_y = self.game.max_y_reached_in_checkpoint
         self._prev_frog_y = self.game.frog_y
+        self._prev_frog_x = self.game.frog_x
         self._episode_length += 1
 
         # Advance ticks until cooldown satisfied ----------------------------
@@ -202,12 +211,20 @@ class FroggerEnv:
         # Execute action ----------------------------------------------------
         self.game.move_frog(action_str)
 
+        # STAY does not reset cooldown in the underlying logic; mimic it here
+        if action_str == "STAY":
+            self.game.frames_since_last_move = 0
+
+        # Track max y reached during the episode
+        if self.game.frog_y > self._max_y_reached:
+            self._max_y_reached = self.game.frog_y
+
         # One final update --------------------------------------------------
         self.game.update(self._dt)
 
         # Compute reward ----------------------------------------------------
         reward = self._compute_reward(
-            prev_lives, prev_laps, prev_checkpoint, prev_max_y
+            prev_lives, prev_laps, prev_checkpoint, prev_max_y, action_str
         )
 
         # Check done --------------------------------------------------------
@@ -221,6 +238,7 @@ class FroggerEnv:
         prev_laps: int,
         prev_checkpoint: int,
         prev_max_y: int,
+        action: str,
     ) -> float:
         """Compute the reward for the current step.
 
@@ -229,6 +247,7 @@ class FroggerEnv:
             prev_laps: Laps before the step.
             prev_checkpoint: Checkpoint value before the step.
             prev_max_y: ``max_y_reached_in_checkpoint`` before the step.
+            action: The action string executed this step.
 
         Returns:
             Scalar reward for this transition.
@@ -240,8 +259,9 @@ class FroggerEnv:
         reward = self.reward_time  # Small penalty every step
 
         # Forward progress into a new lane.
-        if self.game.max_y_reached_in_checkpoint > prev_max_y:
-            reward += self.reward_forward
+        progress = self.game.max_y_reached_in_checkpoint - prev_max_y
+        if progress > 0:
+            reward += self.reward_forward + progress
 
         # Backward movement (only if no lap was completed, because a lap
         # resets the frog to the start lane).
@@ -255,5 +275,9 @@ class FroggerEnv:
         # Lap completed.
         if self.game.laps > prev_laps:
             reward += self.reward_lap
+
+        # Penalty for staying still.
+        if action == "STAY":
+            reward += self.reward_stay
 
         return reward
