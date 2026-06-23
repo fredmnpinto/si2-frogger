@@ -36,14 +36,14 @@ class TestTrainingLogger(unittest.TestCase):
                 header = next(reader)
                 self.assertEqual(
                     header,
-                    ["episode", "total_reward", "epsilon", "loss", "episode_length", "high_score", "max_y"],
+                    ["episode", "total_reward", "epsilon", "loss", "episode_length", "high_score", "max_y", "laps_completed", "steps_per_lap"],
                 )
 
     def test_log_episode_writes_csv_row(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             console = io.StringIO()
             logger = TrainingLogger(tmpdir, console=console)
-            logger.log_episode(1, 10.5, 1.0, 0.5234, 20, max_y=3)
+            logger.log_episode(1, 10.5, 1.0, 0.5234, 20, max_y=3, laps_completed=1, steps_per_lap=15.5)
             logger.close()
 
             with open(os.path.join(tmpdir, "training.csv"), "r", newline="") as f:
@@ -57,12 +57,14 @@ class TestTrainingLogger(unittest.TestCase):
                 self.assertEqual(row[4], "20")
                 self.assertEqual(row[5], "10.5000")
                 self.assertEqual(row[6], "3")
+                self.assertEqual(row[7], "1")
+                self.assertEqual(row[8], "15.50")
 
     def test_log_episode_no_console_output(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             console = io.StringIO()
             logger = TrainingLogger(tmpdir, console=console)
-            logger.log_episode(1, 10.5, 1.0, 0.5234, 20, max_y=3)
+            logger.log_episode(1, 10.5, 1.0, 0.5234, 20, max_y=3, laps_completed=0, steps_per_lap=0.0)
             logger.close()
 
             output = console.getvalue()
@@ -72,9 +74,9 @@ class TestTrainingLogger(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             console = io.StringIO()
             logger = TrainingLogger(tmpdir, console=console)
-            logger.log_episode(1, 10.0, 1.0, 0.5, 10, max_y=2)
-            logger.log_episode(2, 15.0, 0.9, 0.4, 12, max_y=4)
-            logger.log_episode(3, 12.0, 0.8, 0.3, 11, max_y=3)
+            logger.log_episode(1, 10.0, 1.0, 0.5, 10, max_y=2, laps_completed=0, steps_per_lap=0.0)
+            logger.log_episode(2, 15.0, 0.9, 0.4, 12, max_y=4, laps_completed=1, steps_per_lap=12.0)
+            logger.log_episode(3, 12.0, 0.8, 0.3, 11, max_y=3, laps_completed=0, steps_per_lap=0.0)
             logger.close()
 
             with open(os.path.join(tmpdir, "training.csv"), "r", newline="") as f:
@@ -84,12 +86,14 @@ class TestTrainingLogger(unittest.TestCase):
                 self.assertEqual(rows[0][5], "10.0000")
                 self.assertEqual(rows[1][5], "15.0000")
                 self.assertEqual(rows[2][5], "15.0000")
+                self.assertEqual(rows[1][7], "1")
+                self.assertEqual(rows[1][8], "12.00")
 
     def test_none_loss(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             console = io.StringIO()
             logger = TrainingLogger(tmpdir, console=console)
-            logger.log_episode(1, 5.0, 1.0, None, 10, max_y=1)
+            logger.log_episode(1, 5.0, 1.0, None, 10, max_y=1, laps_completed=0, steps_per_lap=0.0)
             logger.close()
 
             with open(os.path.join(tmpdir, "training.csv"), "r", newline="") as f:
@@ -98,6 +102,8 @@ class TestTrainingLogger(unittest.TestCase):
                 row = next(reader)
                 self.assertEqual(row[3], "")
                 self.assertEqual(row[6], "1")
+                self.assertEqual(row[7], "0")
+                self.assertEqual(row[8], "0.00")
 
             output = console.getvalue()
             self.assertEqual(output, "")
@@ -106,7 +112,7 @@ class TestTrainingLogger(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             console = io.StringIO()
             logger = TrainingLogger(tmpdir, console=console)
-            logger.log_episode(1, 5.0, 1.0, float("nan"), 10, max_y=2)
+            logger.log_episode(1, 5.0, 1.0, float("nan"), 10, max_y=2, laps_completed=0, steps_per_lap=0.0)
             logger.close()
 
             with open(os.path.join(tmpdir, "training.csv"), "r", newline="") as f:
@@ -115,6 +121,8 @@ class TestTrainingLogger(unittest.TestCase):
                 row = next(reader)
                 self.assertEqual(row[3], "")
                 self.assertEqual(row[6], "2")
+                self.assertEqual(row[7], "0")
+                self.assertEqual(row[8], "0.00")
 
     def test_log_new_best(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -188,7 +196,7 @@ class TestTrainingLogger(unittest.TestCase):
                 prev_best_steps=300,
                 prev_best_steps_per_lap=300.0,
             )
-            logger.log_episode(5, 200.0, 0.5, 0.1, 200, max_y=8)
+            logger.log_episode(5, 200.0, 0.5, 0.1, 200, max_y=8, laps_completed=2, steps_per_lap=100.0)
             logger.close()
 
             # Should return a string
@@ -201,6 +209,8 @@ class TestTrainingLogger(unittest.TestCase):
                 self.assertEqual(len(rows), 2)  # header + 1 episode row
                 self.assertEqual(rows[1][0], "5")
                 self.assertEqual(rows[1][1], "200.0000")
+                self.assertEqual(rows[1][7], "2")
+                self.assertEqual(rows[1][8], "100.00")
 
     def test_log_summary(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -218,7 +228,7 @@ class TestTrainingLogger(unittest.TestCase):
     def test_context_manager(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             with TrainingLogger(tmpdir) as logger:
-                logger.log_episode(1, 1.0, 1.0, 0.1, 5, max_y=2)
+                logger.log_episode(1, 1.0, 1.0, 0.1, 5, max_y=2, laps_completed=0, steps_per_lap=0.0)
             # After context exit, file should be closed
             self.assertTrue(logger._csv_file.closed)
 
@@ -226,7 +236,7 @@ class TestTrainingLogger(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             console = io.StringIO()
             logger = TrainingLogger(tmpdir, console=console, log_to_file=False)
-            logger.log_episode(1, 10.5, 1.0, 0.5234, 20, max_y=3)
+            logger.log_episode(1, 10.5, 1.0, 0.5234, 20, max_y=3, laps_completed=1, steps_per_lap=15.5)
             logger.close()
 
             # CSV file should not exist
@@ -239,7 +249,7 @@ class TestTrainingLogger(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             console = io.StringIO()
             with TrainingLogger(tmpdir, console=console, log_to_file=False) as logger:
-                logger.log_episode(1, 1.0, 1.0, 0.1, 5, max_y=1)
+                logger.log_episode(1, 1.0, 1.0, 0.1, 5, max_y=1, laps_completed=0, steps_per_lap=0.0)
             self.assertIsNone(logger._csv_file)
 
     def test_multiple_episodes(self):
@@ -247,7 +257,7 @@ class TestTrainingLogger(unittest.TestCase):
             console = io.StringIO()
             with TrainingLogger(tmpdir, console=console) as logger:
                 for i in range(1, 6):
-                    logger.log_episode(i, float(i), 1.0, 0.1, i * 10, max_y=i)
+                    logger.log_episode(i, float(i), 1.0, 0.1, i * 10, max_y=i, laps_completed=i // 2, steps_per_lap=float(i * 5))
 
             with open(os.path.join(tmpdir, "training.csv"), "r", newline="") as f:
                 reader = csv.reader(f)
@@ -256,6 +266,8 @@ class TestTrainingLogger(unittest.TestCase):
                 self.assertEqual(len(rows), 5)
                 self.assertEqual(rows[-1][0], "5")
                 self.assertEqual(rows[-1][6], "5")
+                self.assertEqual(rows[-1][7], "2")
+                self.assertEqual(rows[-1][8], "25.00")
 
 
 if __name__ == "__main__":

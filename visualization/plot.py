@@ -1,10 +1,11 @@
 """Plot generation script for training logs.
 
-Generates four plots from a training CSV log:
+Generates five plots from a training CSV log:
     1. Episode rewards over time (smoothed moving average)
     2. Loss curve over training steps
     3. Epsilon decay over episodes
     4. Evaluation score distribution (histogram/boxplot)
+    5. Steps per lap over time (smoothed moving average)
 
 Usage::
 
@@ -191,8 +192,44 @@ def plot_score_distribution(rewards: List[float], output_path: str, format: str 
     plt.close()
 
 
+def plot_steps_per_lap(episodes: List[float], steps_per_lap: List[float], window: int, output_path: str, format: str = "png") -> None:
+    """Plot steps per lap over time with smoothed moving average.
+
+    Only episodes with laps_completed > 0 are plotted.
+
+    Args:
+        episodes: Episode numbers.
+        steps_per_lap: Steps per lap values.
+        window: Moving average window size.
+        output_path: Path to save the plot file (without extension).
+        format: Output format ("png" or "svg").
+    """
+    valid = [(e, s) for e, s in zip(episodes, steps_per_lap) if s > 0]
+    if not valid:
+        plt.figure(figsize=(10, 6))
+        plt.text(0.5, 0.5, "No lap completion data", ha="center", va="center")
+        plt.axis("off")
+        plt.savefig(f"{output_path}.{format}", dpi=150, format=format)
+        plt.close()
+        return
+
+    ep, sp = zip(*valid)
+    plt.figure(figsize=(10, 6))
+    plt.plot(ep, sp, alpha=0.3, label="Raw steps/lap")
+    smoothed = _moving_average(list(sp), window)
+    plt.plot(ep, smoothed, label=f"Moving average (window={window})")
+    plt.xlabel("Episode")
+    plt.ylabel("Steps per Lap")
+    plt.title("Steps per Lap Over Time (Lower is Better)")
+    plt.legend()
+    plt.grid(True, linestyle="--", alpha=0.5)
+    plt.tight_layout()
+    plt.savefig(f"{output_path}.{format}", dpi=150, format=format)
+    plt.close()
+
+
 def generate_plots(log_path: str, output_dir: str, window: int = DEFAULT_WINDOW_SIZE, format: str = "png") -> List[str]:
-    """Generate all four plots from a training log.
+    """Generate all five plots from a training log.
 
     Args:
         log_path: Path to the CSV training log.
@@ -213,6 +250,7 @@ def generate_plots(log_path: str, output_dir: str, window: int = DEFAULT_WINDOW_
     rewards = data.get("total_reward", [])
     losses = data.get("loss", [])
     epsilons = data.get("epsilon", [])
+    steps_per_lap = data.get("steps_per_lap", [])
 
     files: List[str] = []
 
@@ -234,6 +272,11 @@ def generate_plots(log_path: str, output_dir: str, window: int = DEFAULT_WINDOW_
     if rewards:
         path = os.path.join(output_dir, "score_distribution")
         plot_score_distribution(rewards, path, format=format)
+        files.append(f"{path}.{format}")
+
+    if episodes and steps_per_lap:
+        path = os.path.join(output_dir, "steps_per_lap")
+        plot_steps_per_lap(episodes, steps_per_lap, window, path, format=format)
         files.append(f"{path}.{format}")
 
     return files

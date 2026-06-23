@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import io
 import os
 import signal
@@ -487,7 +488,7 @@ class TestTrainingOrchestrator(unittest.TestCase):
         self.assertEqual(score, 4.0)
         self.assertEqual(env._step_count, 5)
 
-    def test_log_file_created(self):
+    def test_log_file_contains_laps_and_steps_per_lap(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             config = TrainingConfig(episodes=2, eval_freq=10, log_dir=tmpdir)
             env = MockEnv(max_steps=2)
@@ -501,6 +502,16 @@ class TestTrainingOrchestrator(unittest.TestCase):
 
             log_path = os.path.join(tmpdir, "training.csv")
             self.assertTrue(os.path.isfile(log_path))
+            with open(log_path, "r", newline="", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                header = next(reader)
+                self.assertIn("laps_completed", header)
+                self.assertIn("steps_per_lap", header)
+                rows = list(reader)
+                self.assertEqual(len(rows), 2)
+                # MockEnv returns 0 laps, so steps_per_lap should be 0.00
+                self.assertEqual(rows[0][header.index("laps_completed")], "0")
+                self.assertEqual(rows[0][header.index("steps_per_lap")], "0.00")
 
 
 if __name__ == "__main__":

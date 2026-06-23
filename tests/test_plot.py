@@ -18,6 +18,7 @@ from visualization.plot import (
     plot_loss,
     plot_rewards,
     plot_score_distribution,
+    plot_steps_per_lap,
 )
 
 
@@ -29,9 +30,9 @@ class TestParseCsv(unittest.TestCase):
             path = os.path.join(tmpdir, "log.csv")
             with open(path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
-                writer.writerow(["episode", "total_reward", "epsilon", "loss", "episode_length", "high_score"])
-                writer.writerow(["1", "10.5", "1.0", "0.5", "20", "10.5"])
-                writer.writerow(["2", "15.0", "0.9", "", "25", "15.0"])
+                writer.writerow(["episode", "total_reward", "epsilon", "loss", "episode_length", "high_score", "max_y", "laps_completed", "steps_per_lap"])
+                writer.writerow(["1", "10.5", "1.0", "0.5", "20", "10.5", "3", "0", "0.00"])
+                writer.writerow(["2", "15.0", "0.9", "", "25", "15.0", "4", "1", "25.00"])
 
             data = _parse_csv(path)
             self.assertEqual(data["episode"], [1.0, 2.0])
@@ -92,6 +93,19 @@ class TestPlotFunctions(unittest.TestCase):
             plot_epsilon([1, 2, 3], [1.0, 0.5, 0.1], path)
             self.assertTrue(os.path.isfile(path + ".png"))
 
+    def test_plot_steps_per_lap_creates_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "steps_per_lap")
+            plot_steps_per_lap([1, 2, 3], [50.0, 45.0, 40.0], 2, path)
+            self.assertTrue(os.path.isfile(path + ".png"))
+            self.assertGreater(os.path.getsize(path + ".png"), 0)
+
+    def test_plot_steps_per_lap_no_valid_data(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "steps_per_lap")
+            plot_steps_per_lap([1, 2], [0.0, 0.0], 2, path)
+            self.assertTrue(os.path.isfile(path + ".png"))
+
     def test_plot_score_distribution_creates_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "dist")
@@ -113,18 +127,19 @@ class TestGeneratePlots(unittest.TestCase):
             log_path = os.path.join(tmpdir, "training.csv")
             with open(log_path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
-                writer.writerow(["episode", "total_reward", "epsilon", "loss", "episode_length", "high_score"])
+                writer.writerow(["episode", "total_reward", "epsilon", "loss", "episode_length", "high_score", "max_y", "laps_completed", "steps_per_lap"])
                 for i in range(1, 11):
-                    writer.writerow([i, i * 10, 1.0 - i * 0.1, 1.0 / i, i * 5, i * 10])
+                    writer.writerow([i, i * 10, 1.0 - i * 0.1, 1.0 / i, i * 5, i * 10, i, i // 2, float(i * 5)])
 
             output_dir = os.path.join(tmpdir, "plots")
             paths = generate_plots(log_path, output_dir, window=3)
 
-            self.assertEqual(len(paths), 4)
+            self.assertEqual(len(paths), 5)
             self.assertTrue(any("rewards.png" in p for p in paths))
             self.assertTrue(any("loss.png" in p for p in paths))
             self.assertTrue(any("epsilon.png" in p for p in paths))
             self.assertTrue(any("score_distribution.png" in p for p in paths))
+            self.assertTrue(any("steps_per_lap.png" in p for p in paths))
 
     def test_generate_plots_missing_columns(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -159,29 +174,31 @@ class TestPlotMain(unittest.TestCase):
             log_path = os.path.join(tmpdir, "training.csv")
             with open(log_path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
-                writer.writerow(["episode", "total_reward", "epsilon", "loss", "episode_length", "high_score"])
+                writer.writerow(["episode", "total_reward", "epsilon", "loss", "episode_length", "high_score", "max_y", "laps_completed", "steps_per_lap"])
                 for i in range(1, 6):
-                    writer.writerow([i, i * 10, 1.0 - i * 0.1, 1.0 / i, i * 5, i * 10])
+                    writer.writerow([i, i * 10, 1.0 - i * 0.1, 1.0 / i, i * 5, i * 10, i, i // 2, float(i * 5)])
 
             output_dir = os.path.join(tmpdir, "plots")
             exit_code = main(["--log", log_path, "--output", output_dir])
             self.assertEqual(exit_code, 0)
             self.assertTrue(os.path.isfile(os.path.join(output_dir, "rewards.png")))
+            self.assertTrue(os.path.isfile(os.path.join(output_dir, "steps_per_lap.png")))
 
     def test_main_svg_format(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             log_path = os.path.join(tmpdir, "training.csv")
             with open(log_path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
-                writer.writerow(["episode", "total_reward", "epsilon", "loss", "episode_length", "high_score"])
+                writer.writerow(["episode", "total_reward", "epsilon", "loss", "episode_length", "high_score", "max_y", "laps_completed", "steps_per_lap"])
                 for i in range(1, 6):
-                    writer.writerow([i, i * 10, 1.0 - i * 0.1, 1.0 / i, i * 5, i * 10])
+                    writer.writerow([i, i * 10, 1.0 - i * 0.1, 1.0 / i, i * 5, i * 10, i, i // 2, float(i * 5)])
 
             output_dir = os.path.join(tmpdir, "plots")
             exit_code = main(["--log", log_path, "--output", output_dir, "--format", "svg"])
             self.assertEqual(exit_code, 0)
             self.assertTrue(os.path.isfile(os.path.join(output_dir, "rewards.svg")))
             self.assertTrue(os.path.isfile(os.path.join(output_dir, "loss.svg")))
+            self.assertTrue(os.path.isfile(os.path.join(output_dir, "steps_per_lap.svg")))
 
     def test_main_missing_file(self):
         exit_code = main(["--log", "/nonexistent.csv", "--output", "/tmp/plots"])

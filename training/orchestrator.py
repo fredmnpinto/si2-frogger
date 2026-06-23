@@ -356,7 +356,8 @@ class TrainingOrchestrator:
 
                     # Still log to CSV for plotting
                     self.logger.log_episode(
-                        episode, total_reward, self._get_current_epsilon(), loss, length, max_y
+                        episode, total_reward, self._get_current_epsilon(), loss, length, max_y,
+                        laps, steps_per_lap,
                     )
 
                     # Update progress bar
