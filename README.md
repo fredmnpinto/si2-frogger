@@ -52,6 +52,11 @@ In a separate terminal (ensure the virtual environment is activated):
   python3 -m agents.manual_agent
   ```
 
+- **DQN Inference Agent** (requires a trained model):
+  ```bash
+  python3 -m agents.dqn_agent --model checkpoints/best_model.pt
+  ```
+
 ## Training
 
 The project includes a full DQN training pipeline for learning a Frogger agent. The implementation uses **standard DQN** with experience replay and target networks for stable learning.
@@ -113,21 +118,19 @@ You can provide a JSON config file to override hyperparameters:
   "eval_freq": 25,
   "eval_episodes": 5,
   "seed": 42,
-  "dqn": {
-    "learning_rate": 0.001,
-    "gamma": 0.99,
-    "epsilon_start": 1.0,
-    "epsilon_end": 0.01,
-    "epsilon_decay_steps": 10000,
-    "buffer_size": 50000,
-    "batch_size": 32,
-    "target_update_freq": 1000,
-    "tau": 1.0,
-    "update_frequency": 4,
-    "hidden_size": 64,
-    "gradient_clip": 1.0,
-    "device": "auto"
-  }
+  "dqn_learning_rate": 0.001,
+  "dqn_gamma": 0.99,
+  "dqn_epsilon_start": 1.0,
+  "dqn_epsilon_end": 0.01,
+  "dqn_epsilon_decay_steps": 10000,
+  "dqn_buffer_size": 50000,
+  "dqn_batch_size": 32,
+  "dqn_target_update_freq": 1000,
+  "dqn_tau": 1.0,
+  "dqn_update_frequency": 4,
+  "dqn_hidden_size": 64,
+  "dqn_gradient_clip": 1.0,
+  "dqn_device": "auto"
 }
 ```
 
@@ -135,8 +138,10 @@ You can provide a JSON config file to override hyperparameters:
 The project structure:
 - `server/`: Game logic, server implementation, and visualizer assets (inside `server/viewer/`).
 - `agents/`: Autonomous and manual agent implementations.
+- `env/`: Gym-like environment wrapper around `server.logic.Frogger`.
 - `models/`: DQN network and state encoder.
 - `training/`: DQN trainer, replay buffer, checkpoint manager, logger, and orchestrator.
+- `evaluation/`: Benchmarking framework for comparing DQN against random baseline.
 - `visualization/`: Plot generation scripts for training logs.
 - `tests/`: Game and training unit tests.
 
@@ -199,7 +204,7 @@ After implementing a series of targeted improvements to the reward structure and
 | Laps at Best Score | **17** |
 | Recent100 Mean Score | **2,220.2** |
 | Recent100 Avg Laps | **6.1** |
-| Network Architecture | 32→64→64→4 |
+| Network Architecture | 32→64→64→5 |
 | Total Parameters | **6,597** |
 
 The training curve shows stable, sustained learning over 20,000 episodes with seed 42. The agent did not suffer from catastrophic forgetting; instead, it continued to improve and maintain strong performance throughout the entire training run.
