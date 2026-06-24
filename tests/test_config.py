@@ -90,13 +90,13 @@ class TestTrainingConfigSerialization(unittest.TestCase):
             "episodes": 2000,
             "seed": 7,
             "dqn_learning_rate": 5e-4,
-            "dqn_hidden_size": 256,
+            "dqn_hidden_size": 64,
         }
         config = TrainingConfig.from_dict(data)
         self.assertEqual(config.episodes, 2000)
         self.assertEqual(config.seed, 7)
         self.assertEqual(config.dqn.learning_rate, 5e-4)
-        self.assertEqual(config.dqn.hidden_size, 256)
+        self.assertEqual(config.dqn.hidden_size, 64)
 
     def test_from_dict_ignores_invalid_keys(self):
         data = {"episodes": 100, "invalid_key": "should_be_ignored"}
@@ -157,11 +157,11 @@ class TestParseArgs(unittest.TestCase):
     def test_override_dqn_params(self):
         config = parse_args([
             "--learning-rate", "0.005",
-            "--hidden-size", "256",
+            "--hidden-size", "64",
             "--batch-size", "64",
         ])
         self.assertEqual(config.dqn.learning_rate, 0.005)
-        self.assertEqual(config.dqn.hidden_size, 256)
+        self.assertEqual(config.dqn.hidden_size, 64)
         self.assertEqual(config.dqn.batch_size, 64)
 
     def test_config_file_override(self):
@@ -205,7 +205,7 @@ class TestParseArgs(unittest.TestCase):
             "--target-update-freq", "500",
             "--tau", "0.5",
             "--update-frequency", "2",
-            "--hidden-size", "256",
+            "--hidden-size", "64",
             "--gradient-clip", "5.0",
             "--device", "cpu",
         ])
@@ -219,7 +219,7 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(config.dqn.target_update_freq, 500)
         self.assertEqual(config.dqn.tau, 0.5)
         self.assertEqual(config.dqn.update_frequency, 2)
-        self.assertEqual(config.dqn.hidden_size, 256)
+        self.assertEqual(config.dqn.hidden_size, 64)
         self.assertEqual(config.dqn.gradient_clip, 5.0)
         self.assertEqual(config.dqn.device, "cpu")
 

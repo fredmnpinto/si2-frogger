@@ -58,9 +58,9 @@ class FroggerEnv:
         reward_forward: float = 10.0,
         reward_checkpoint: float = 50.0,
         reward_lap: float = 100.0,
-        reward_death: float = -10.0,
+        reward_death: float = -50.0,
         reward_backward: float = -2.0,
-        reward_time: float = -0.1,
+        reward_time: float = +1.0,
         reward_stay: float = -0.5,
     ) -> None:
         """Create a new ``FroggerEnv``.
@@ -72,7 +72,7 @@ class FroggerEnv:
             reward_lap: Reward for completing a lap.
             reward_death: Penalty for dying.
             reward_backward: Penalty for moving backward.
-            reward_time: Small penalty every step to encourage faster progress.
+            reward_time: Small survival bonus every step to reward staying alive.
             reward_stay: Penalty for staying still to discourage idle behaviour.
         """
         self.game = Frogger(width=11, height=9, fps=30)
@@ -227,6 +227,16 @@ class FroggerEnv:
         # One final update --------------------------------------------------
         self.game.update(self._dt)
 
+        # Death dominates all other signals.
+        if self.game.lives < prev_lives:
+            self._done = True
+            return (
+                self.game.get_state(),
+                self.reward_death,
+                self._done,
+                self._get_info(),
+            )
+
         # Check if lap completed (frog reached y=8 and reset to y=0)
         if self.game.frog_y == 0 and self._prev_frog_y > 0 and self.game.laps > prev_laps:
             self._laps_completed += 1
@@ -261,11 +271,7 @@ class FroggerEnv:
         Returns:
             Scalar reward for this transition.
         """
-        # Death dominates all other signals.
-        if self.game.lives < prev_lives:
-            return self.reward_death
-
-        reward = self.reward_time  # Small penalty every step
+        reward = self.reward_time  # Small survival bonus every step
 
         # Forward progress into a new lane.
         progress = self.game.max_y_reached_in_checkpoint - prev_max_y

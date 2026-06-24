@@ -104,7 +104,7 @@ class DQNAgent(BaseAgent):
             ) from exc
 
         config = checkpoint.get("config", {})
-        hidden_size = config.get("hidden_size", 256)
+        hidden_size = config.get("hidden_size", 64)
 
         network = DQNNetwork(hidden_dim=hidden_size).to(self.device)
 

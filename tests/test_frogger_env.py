@@ -44,9 +44,9 @@ class TestFroggerEnv(unittest.TestCase):
         self.assertEqual(env.reward_forward, 10.0)
         self.assertEqual(env.reward_checkpoint, 50.0)
         self.assertEqual(env.reward_lap, 100.0)
-        self.assertEqual(env.reward_death, -10.0)
+        self.assertEqual(env.reward_death, -50.0)
         self.assertEqual(env.reward_backward, -2.0)
-        self.assertEqual(env.reward_time, -0.1)
+        self.assertEqual(env.reward_time, +1.0)
         self.assertEqual(env.reward_stay, -0.5)
 
     def test_init_custom_rewards(self):
@@ -203,7 +203,7 @@ class TestFroggerEnv(unittest.TestCase):
         )
         state, reward, done, info = env.step("NORTH")
         self.assertTrue(done)
-        self.assertEqual(reward, -10.0)
+        self.assertEqual(reward, -50.0)
         self.assertEqual(info["lives"], 0)
 
     def test_death_after_action(self):
@@ -216,27 +216,42 @@ class TestFroggerEnv(unittest.TestCase):
         )
         state, reward, done, info = env.step("NORTH")
         self.assertTrue(done)
-        self.assertEqual(reward, -10.0)
+        self.assertEqual(reward, -50.0)
         self.assertEqual(info["lives"], 0)
+
+    def test_terminal_death_with_lives_remaining(self):
+        """Death is terminal even when lives remain (e.g., 3 -> 2)."""
+        env = FroggerEnv()
+        env.reset()
+        env.game.obstacles = []
+        env.game.lives = 3
+        env.game.obstacles.append(
+            Obstacle(x=5.0, y=1, width=2.5, speed=0.0, type="car", variant="test")
+        )
+        state, reward, done, info = env.step("NORTH")
+        self.assertTrue(done)
+        self.assertEqual(reward, -50.0)
+        self.assertEqual(info["lives"], 2)
+        self.assertFalse(info["game_over"])
 
     def test_reward_forward_progress(self):
         env = FroggerEnv()
         env.reset()
         env.game.obstacles = []
         _, reward, _, _ = env.step("NORTH")
-        # forward 10 + progress 1 + time -0.1 = 10.9
-        self.assertEqual(reward, 10.9)
+        # forward 10 + progress 1 + time +1.0 = 12.0
+        self.assertEqual(reward, 12.0)
 
     def test_reward_no_double_forward(self):
         env = FroggerEnv()
         env.reset()
         env.game.obstacles = []
-        _, r1, _, _ = env.step("NORTH")   # y=0 -> y=1, forward +10 + progress +1 + time -0.1
-        _, r2, _, _ = env.step("SOUTH")   # y=1 -> y=0, backward -2 + time -0.1
-        _, r3, _, _ = env.step("NORTH")   # y=0 -> y=1, no extra forward + time -0.1
-        self.assertEqual(r1, 10.9)
-        self.assertEqual(r2, -2.1)
-        self.assertEqual(r3, -0.1)
+        _, r1, _, _ = env.step("NORTH")   # y=0 -> y=1, forward +10 + progress +1 + time +1.0
+        _, r2, _, _ = env.step("SOUTH")   # y=1 -> y=0, backward -2 + time +1.0
+        _, r3, _, _ = env.step("NORTH")   # y=0 -> y=1, no extra forward + time +1.0
+        self.assertEqual(r1, 12.0)
+        self.assertEqual(r2, -1.0)
+        self.assertEqual(r3, 1.0)
 
     def test_reward_backward(self):
         env = FroggerEnv()
@@ -244,7 +259,7 @@ class TestFroggerEnv(unittest.TestCase):
         env.game.obstacles = []
         env.step("NORTH")  # y=0 -> y=1
         _, reward, _, _ = env.step("SOUTH")
-        self.assertEqual(reward, -2.1)
+        self.assertEqual(reward, -1.0)
 
     def test_reward_checkpoint(self):
         env = FroggerEnv()
@@ -255,7 +270,7 @@ class TestFroggerEnv(unittest.TestCase):
         # 4th move reaches y=4 (checkpoint). max_y is reset to 0 by checkpoint logic,
         # so no forward/progress reward is awarded for this step.
         _, reward, _, _ = env.step("NORTH")
-        self.assertEqual(reward, 49.9)
+        self.assertEqual(reward, 51.0)
 
     def test_reward_lap(self):
         env = FroggerEnv()
@@ -266,7 +281,7 @@ class TestFroggerEnv(unittest.TestCase):
         # 8th move reaches y=8 (lap completion). max_y is reset to 0 by lap logic,
         # so no forward/progress reward is awarded for this step.
         _, reward, _, _ = env.step("NORTH")
-        self.assertEqual(reward, 99.9)
+        self.assertEqual(reward, 101.0)
 
     def test_reward_death(self):
         env = FroggerEnv()
@@ -277,7 +292,7 @@ class TestFroggerEnv(unittest.TestCase):
             Obstacle(x=5.0, y=1, width=2.5, speed=0.0, type="car", variant="test")
         )
         _, reward, done, _ = env.step("NORTH")
-        self.assertEqual(reward, -10.0)
+        self.assertEqual(reward, -50.0)
         self.assertTrue(done)
 
     def test_info_dict(self):
@@ -367,8 +382,8 @@ class TestFroggerEnv(unittest.TestCase):
         env.reset()
         env.game.obstacles = []
         _, reward, _, _ = env.step("NORTH")
-        # forward 5 + progress 1 + time -0.1 = 5.9
-        self.assertEqual(reward, 5.9)
+        # forward 5 + progress 1 + time +1.0 = 7.0
+        self.assertEqual(reward, 7.0)
 
         env.reset()
         env.game.obstacles = []
@@ -385,14 +400,14 @@ class TestFroggerEnv(unittest.TestCase):
         env.reset()
         env.game.obstacles = []
         _, reward, _, _ = env.step("STAY")
-        self.assertEqual(reward, -0.6)  # stay -0.5 + time -0.1
+        self.assertEqual(reward, 0.5)  # stay -0.5 + time +1.0
 
     def test_stay_action_int(self):
         env = FroggerEnv()
         env.reset()
         env.game.obstacles = []
         _, reward, _, _ = env.step(4)
-        self.assertEqual(reward, -0.6)
+        self.assertEqual(reward, 0.5)
 
     def test_stay_resets_cooldown(self):
         env = FroggerEnv()

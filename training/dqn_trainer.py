@@ -199,11 +199,10 @@ class DQNTrainer:
             self.target_net.load_state_dict(self.policy_net.state_dict())
 
     def train_step(self) -> Optional[float]:
-        """Perform one Double DQN training step.
+        """Perform one DQN training step.
 
         Samples a batch from the replay buffer, computes the temporal-difference
-        loss using Double DQN (decoupling action selection from action evaluation),
-        back-propagates, and clips gradients.
+        loss, back-propagates, and clips gradients.
 
         Returns:
             The loss value as a Python ``float``, or ``None`` if no training
@@ -233,12 +232,9 @@ class DQNTrainer:
             .squeeze(1)
         )
 
-        # Double DQN: use policy net to select action, target net to evaluate
+        # Compute target Q-values using the target network
         with torch.no_grad():
-            # Select best action using policy network
-            best_actions = self.policy_net(next_states).argmax(1)
-            # Evaluate that action using target network
-            q_next = self.target_net(next_states).gather(1, best_actions.unsqueeze(1)).squeeze(1)
+            q_next = self.target_net(next_states).max(1)[0]
             q_target = rewards + self.config.gamma * q_next * (1.0 - dones)
 
         # Loss

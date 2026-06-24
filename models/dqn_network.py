@@ -14,13 +14,13 @@ from typing import Any, Dict, List
 import torch
 import torch.nn as nn
 
-STATE_DIM = 30
+STATE_DIM = 32
 """Dimensionality of the encoded state vector."""
 
 NUM_ACTIONS = 5
 """Number of discrete actions (NORTH, SOUTH, EAST, WEST, STAY)."""
 
-HIDDEN_SIZE = 256
+HIDDEN_SIZE = 64
 """Default hidden layer size for the DQN network."""
 
 MAX_SPEED = 1.8
@@ -49,7 +49,7 @@ SENSOR_MAX_RANGE = 3
 class StateEncoder:
     """Encodes raw Frogger game state into a fixed-size feature vector.
 
-    The output vector has :data:`STATE_DIM` (30) elements:
+    The output vector has :data:`STATE_DIM` (32) elements:
 
     +---------+------------------------------------------+
     | Indices | Description                              |
@@ -64,6 +64,8 @@ class StateEncoder:
     | 16-18   | Lane 6: distance, speed, width           |
     | 19-21   | Lane 7: distance, speed, width           |
     | 22-29   | Directional sensors (8 directions)       |
+    | 30      | Danger current (1.0 if collision)        |
+    | 31      | Safe north (1.0 if clear above)          |
     +---------+------------------------------------------+
     """
 
@@ -78,7 +80,7 @@ class StateEncoder:
         self.height = height
 
     def encode(self, state: Dict[str, Any]) -> torch.Tensor:
-        """Encode a raw game state dictionary into a 30-D tensor.
+        """Encode a raw game state dictionary into a 32-D tensor.
 
         Args:
             state: Raw state from :meth:`server.logic.Frogger.get_state` or
@@ -141,7 +143,33 @@ class StateEncoder:
             )
             features[22 + direction_idx] = sensor_dist
 
+        # Danger flags (2 features)
+        # danger_current: is there a car in the frog's current cell?
+        features[30] = 1.0 if self._is_collision(frog_x, frog_y, obstacles) else 0.0
+
+        # safe_north: is the cell above clear?
+        if frog_y >= self.height - 1:
+            features[31] = 1.0  # Goal is always safe
+        else:
+            features[31] = 0.0 if self._is_collision(frog_x, frog_y + 1, obstacles) else 1.0
+
         return features
+
+    def _is_collision(
+        self,
+        frog_x: float,
+        frog_y: int,
+        obstacles: List[Dict[str, Any]],
+    ) -> bool:
+        """Check if the frog at (frog_x, frog_y) collides with any obstacle."""
+        for obs in obstacles:
+            if obs.get("y") != frog_y:
+                continue
+            if self._distance_to_obstacle(
+                frog_x, float(obs["x"]), float(obs["width"]), self.width
+            ) == 0.0:
+                return True
+        return False
 
     def _sensor_distance(
         self,
@@ -230,9 +258,9 @@ class DQNNetwork(nn.Module):
     """Simple MLP DQN network mapping state vectors to Q-values.
 
     Architecture (default):
-        ``Input[batch, 30] -> Linear(30, 256) + ReLU
-                              -> Linear(256, 256) + ReLU
-                              -> Linear(256, 5)``
+        ``Input[batch, 32] -> Linear(32, 64) + ReLU
+                              -> Linear(64, 64) + ReLU
+                              -> Linear(64, 5)``
 
     No activation is applied to the output layer.
     """

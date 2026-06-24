@@ -532,7 +532,6 @@ class TestTrainingOrchestrator(unittest.TestCase):
             with mock.patch("rich.progress.Progress", return_value=mock_progress):
                 orch.run()
 
-        # After 3 episodes, window should have 3 entries
         self.assertEqual(len(orch._recent_rewards), 3)
         self.assertEqual(len(orch._recent_lengths), 3)
         self.assertEqual(len(orch._recent_laps), 3)
@@ -549,7 +548,6 @@ class TestTrainingOrchestrator(unittest.TestCase):
             with mock.patch("rich.progress.Progress", return_value=mock_progress):
                 orch.run()
 
-        # Window size is 2, so only 2 entries should remain
         self.assertEqual(len(orch._recent_rewards), 2)
         self.assertEqual(len(orch._recent_lengths), 2)
         self.assertEqual(len(orch._recent_laps), 2)
@@ -572,36 +570,10 @@ class TestTrainingOrchestrator(unittest.TestCase):
                 with mock.patch("rich.progress.Progress", return_value=mock_progress):
                     orch.run()
 
-            # After episode 5, evaluation runs and sets _eval_message
             self.assertIsNotNone(orch._eval_message)
             self.assertIn("Mean:", orch._eval_message)
             self.assertIn("Std:", orch._eval_message)
             self.assertIn("AvgLaps:", orch._eval_message)
-
-    def test_log_file_contains_laps_and_steps_per_lap(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            config = TrainingConfig(episodes=2, eval_freq=10, log_dir=tmpdir)
-            env = MockEnv(max_steps=2)
-            trainer = DQNTrainer(DQNConfig(hidden_size=16))
-            orch = self._make_orchestrator(config, env=env, trainer=trainer)
-
-            mock_live, mock_progress = _make_rich_mocks()
-            with mock.patch("rich.live.Live", return_value=mock_live):
-                with mock.patch("rich.progress.Progress", return_value=mock_progress):
-                    orch.run()
-
-            log_path = os.path.join(tmpdir, "training.csv")
-            self.assertTrue(os.path.isfile(log_path))
-            with open(log_path, "r", newline="", encoding="utf-8") as f:
-                reader = csv.reader(f)
-                header = next(reader)
-                self.assertIn("laps_completed", header)
-                self.assertIn("steps_per_lap", header)
-                rows = list(reader)
-                self.assertEqual(len(rows), 2)
-                # MockEnv returns 0 laps, so steps_per_lap should be 0.00
-                self.assertEqual(rows[0][header.index("laps_completed")], "0")
-                self.assertEqual(rows[0][header.index("steps_per_lap")], "0.00")
 
 
 class TestSmoothedTimeRemainingColumn(unittest.TestCase):

@@ -190,6 +190,67 @@ class TestStateEncoder(unittest.TestCase):
         for idx in range(23, 30):
             self.assertEqual(tensor[idx].item(), 1.0)
 
+    def test_danger_current_flag(self):
+        encoder = StateEncoder(width=11)
+        # Frog at (5, 1) with obstacle at y=1 overlapping x=5
+        state = self._make_state(
+            frog_x=5.0,
+            frog_y=1,
+            obstacles=[
+                {"x": 5.0, "y": 1, "width": 1.0, "speed": 0.0, "type": "car"},
+            ],
+        )
+        tensor = encoder.encode(state)
+        # danger_current (index 30) should be 1.0
+        self.assertEqual(tensor[30].item(), 1.0)
+        # safe_north (index 31): y=2 has no obstacle -> 1.0
+        self.assertEqual(tensor[31].item(), 1.0)
+
+    def test_safe_north_flag_blocked(self):
+        encoder = StateEncoder(width=11)
+        # Frog at (5, 1) with obstacle at y=2 overlapping x=5
+        state = self._make_state(
+            frog_x=5.0,
+            frog_y=1,
+            obstacles=[
+                {"x": 5.0, "y": 2, "width": 1.0, "speed": 0.0, "type": "car"},
+            ],
+        )
+        tensor = encoder.encode(state)
+        # danger_current (index 30): no obstacle at y=1 -> 0.0
+        self.assertEqual(tensor[30].item(), 0.0)
+        # safe_north (index 31): obstacle at y=2 -> 0.0
+        self.assertEqual(tensor[31].item(), 0.0)
+
+    def test_safe_north_at_goal(self):
+        encoder = StateEncoder(width=11, height=9)
+        # Frog at top row (y=8), goal is always safe
+        state = self._make_state(
+            frog_x=5.0,
+            frog_y=8,
+            obstacles=[],
+        )
+        tensor = encoder.encode(state)
+        # danger_current (index 30): no obstacle -> 0.0
+        self.assertEqual(tensor[30].item(), 0.0)
+        # safe_north (index 31): at goal -> 1.0
+        self.assertEqual(tensor[31].item(), 1.0)
+
+    def test_danger_flags_binary(self):
+        encoder = StateEncoder(width=11)
+        state = self._make_state(
+            frog_x=5.0,
+            frog_y=4,
+            obstacles=[
+                {"x": 5.0, "y": 4, "width": 1.0, "speed": 0.0, "type": "car"},
+                {"x": 5.0, "y": 5, "width": 1.0, "speed": 0.0, "type": "car"},
+            ],
+        )
+        tensor = encoder.encode(state)
+        # Both danger flags should be exactly 0.0 or 1.0
+        self.assertIn(tensor[30].item(), {0.0, 1.0})
+        self.assertIn(tensor[31].item(), {0.0, 1.0})
+
 
 class TestDQNNetwork(unittest.TestCase):
     """Tests for :class:`DQNNetwork`."""
@@ -209,9 +270,9 @@ class TestDQNNetwork(unittest.TestCase):
     def test_parameter_count(self):
         net = DQNNetwork()
         total = sum(p.numel() for p in net.parameters())
-        # Expected: ~75K parameters with 30-D input, 256 hidden, 5 actions
-        self.assertGreater(total, 70000)
-        self.assertLess(total, 80000)
+        # Expected: ~6.6K parameters with 32-D input, 64 hidden, 5 actions
+        self.assertGreater(total, 6000)
+        self.assertLess(total, 7000)
 
     def test_cpu_forward(self):
         net = DQNNetwork()
