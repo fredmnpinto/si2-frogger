@@ -1,10 +1,11 @@
 # SI2-Frogger DQN Agent Functional Specification
 
-> **Version**: 2.2.0 | **Date**: 2026-06-24 | **Author**: Documenter Agent | **Status**: Draft
+> **Version**: 2.3.0 | **Date**: 2026-06-24 | **Author**: Documenter Agent | **Status**: Draft
 
 ## Change Log
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.3.0 | 2026-06-24 | Documenter Agent | FR-004 (Inference Agent) marked as Implemented. DQNAgent subclassing BaseAgent with checkpoint loading, StateEncoder for WebSocket state conversion, greedy action selection (epsilon=0), STAY action masking, CLI entry point (`python -m agents.dqn_agent`), 19 unit tests, ~93% coverage. Commit: `d6c8f0bc`. |
 | 2.2.0 | 2026-06-24 | Documenter Agent | Updated spec to match current implementation: 5 actions (added STAY), 30-D state with 8 directional sensors, MLP 256x256 (~75K params), Rich Live display with high score tracker and achievement banner, per-lap (200) and total (2000) step limits, 5 plots (added steps_per_lap), updated reward function details, updated FR statuses (FR-002, FR-003, FR-006 Implemented; FR-004, FR-005 Draft), updated dependencies (added rich, removed tqdm). |
 | 2.1.2 | 2026-06-21 | Documenter Agent | FR-003 (Training Orchestration) marked as Implemented. TrainingOrchestrator with episode loop, tqdm progress bar, CheckpointManager with periodic saves/best model tracking/emergency recovery, TrainingLogger with console+CSV logging, TrainingConfig with CLI parser and JSON config support, visualization/plot.py with 4 plot types, DQNTrainer save/load checkpoint methods, CLI entry points, SIGINT handling, NaN/Inf detection. 176 tests passing, 99% coverage. Commit: `9d20902`. |
 | 2.1.1 | 2026-06-20 | Documenter Agent | FR-001 (Environment Wrapper) marked as Implemented. `env/__init__.py` and `env/frogger_env.py` created with `FroggerEnv` class wrapping `server.logic.Frogger`. All acceptance criteria checked off. 29 unit tests, 98% coverage. Commit: `4f5e292`. |
@@ -98,7 +99,7 @@ The project delivers a complete DQN-based RL system:
 | FR-001 | Environment Wrapper | The system shall provide a Gym-like wrapper around Frogger logic exposing reset(), step(), state extraction, reward computation, and cooldown handling | Must | project02.md, codebase | None | Implemented |
 | FR-002 | DQN Training System | The system shall implement a complete DQN algorithm including neural network, experience replay, epsilon-greedy exploration, target network updates, loss computation, and optimizer | Must | project02.md, DQN paper | FR-001 | Implemented |
 | FR-003 | Training Orchestration | The system shall run a training loop over N episodes with logging, checkpointing, and visualization | Must | project02.md | FR-002 | Implemented |
-| FR-004 | Inference Agent | The system shall provide a DQNAgent subclassing BaseAgent that loads trained weights and plays via WebSocket | Must | project02.md, codebase | FR-003 | Draft |
+| FR-004 | Inference Agent | The system shall provide a DQNAgent subclassing BaseAgent that loads trained weights and plays via WebSocket | Must | project02.md, codebase | FR-003 | Implemented |
 | FR-005 | Evaluation and Benchmarking | The system shall evaluate trained agents over multiple episodes and compute statistics vs DummyAgent baseline | Must | project02.md | FR-004 | Draft |
 | FR-006 | Hyperparameter Configuration | The system shall expose all hyperparameters via config file or CLI | Should | project02.md | FR-003 | Implemented |
 
@@ -178,14 +179,14 @@ The project delivers a complete DQN-based RL system:
 **Source**: project02.md, codebase
 **Dependencies**: FR-003
 **Acceptance Criteria**:
-- [ ] `DQNAgent` extends `agents.base_agent.BaseAgent`
-- [ ] Implements `async deliberate()` method selecting action via trained DQN
-- [ ] Converts WebSocket state JSON to the same representation used during training
-- [ ] Selects action with epsilon=0 (pure exploitation) during gameplay
-- [ ] Handles `game_over` state by returning `None`
-- [ ] Successfully connects to `ws://localhost:8765/ws` and plays the game
-- [ ] Can be launched via `python3 -m agents.dqn_agent`
-**Status**: Draft
+- [x] `DQNAgent` extends `agents.base_agent.BaseAgent`
+- [x] Implements `async deliberate()` method selecting action via trained DQN
+- [x] Converts WebSocket state JSON to the same representation used during training
+- [x] Selects action with epsilon=0 (pure exploitation) during gameplay
+- [x] Handles `game_over` state by returning `None`
+- [x] Successfully connects to `ws://localhost:8765/ws` and plays the game
+- [x] Can be launched via `python3 -m agents.dqn_agent`
+**Status**: Implemented
 
 #### FR-005: Evaluation and Benchmarking
 **Description**: The system shall evaluate trained agents over multiple episodes and compute statistics vs DummyAgent baseline.
