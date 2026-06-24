@@ -201,7 +201,7 @@ class Evaluator:
         self,
         network: Optional[DQNNetwork] = None,
         n_episodes: int = 100,
-        epsilon: float = 0.0,
+        epsilon: float = 0.05,
         seed: Optional[int] = None,
         max_steps_per_lap: int = 200,
         max_total_steps: int = 2000,
@@ -217,8 +217,8 @@ class Evaluator:
             network: Optional trained DQN network.  When ``None``, random
                 baseline is evaluated.
             n_episodes: Number of episodes to run.
-            epsilon: Exploration probability for DQN evaluation (default 0.0
-                for pure exploitation).
+            epsilon: Exploration probability for DQN evaluation (default 0.05,
+                following DeepMind's evaluation protocol).
             seed: Optional random seed for reproducibility.
             max_steps_per_lap: Maximum steps allowed without completing a lap.
             max_total_steps: Absolute maximum steps per episode.
@@ -359,6 +359,7 @@ class Evaluator:
         seed: Optional[int] = None,
         max_steps_per_lap: int = 200,
         max_total_steps: int = 2000,
+        epsilon: float = 0.05,
     ) -> EvaluationResult:
         """Evaluate a trained DQN agent from a checkpoint file.
 
@@ -368,6 +369,7 @@ class Evaluator:
             seed: Optional random seed.
             max_steps_per_lap: Maximum steps allowed without completing a lap.
             max_total_steps: Absolute maximum steps per episode.
+            epsilon: Epsilon for epsilon-greedy evaluation.
 
         Returns:
             :class:`EvaluationResult` for the DQN agent.
@@ -376,7 +378,7 @@ class Evaluator:
         return self.run_episodes(
             network=network,
             n_episodes=n_episodes,
-            epsilon=0.0,
+            epsilon=epsilon,
             seed=seed,
             max_steps_per_lap=max_steps_per_lap,
             max_total_steps=max_total_steps,

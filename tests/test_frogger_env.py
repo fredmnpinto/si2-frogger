@@ -41,13 +41,15 @@ class TestFroggerEnv(unittest.TestCase):
 
     def test_init_default(self):
         env = FroggerEnv()
-        self.assertEqual(env.reward_forward, 10.0)
-        self.assertEqual(env.reward_checkpoint, 50.0)
-        self.assertEqual(env.reward_lap, 100.0)
+        self.assertEqual(env.reward_forward, 20.0)
+        self.assertEqual(env.reward_checkpoint, 100.0)
+        self.assertEqual(env.reward_lap, 200.0)
         self.assertEqual(env.reward_death, -50.0)
         self.assertEqual(env.reward_backward, -2.0)
         self.assertEqual(env.reward_time, +1.0)
         self.assertEqual(env.reward_stay, -0.5)
+        self.assertEqual(env.reward_north, 2.0)
+        self.assertEqual(env.reward_south, -1.0)
 
     def test_init_custom_rewards(self):
         env = FroggerEnv(
@@ -56,12 +58,16 @@ class TestFroggerEnv(unittest.TestCase):
             reward_lap=100.0,
             reward_death=-50.0,
             reward_backward=-5.0,
+            reward_north=3.0,
+            reward_south=-2.0,
         )
         self.assertEqual(env.reward_forward, 5.0)
         self.assertEqual(env.reward_checkpoint, 25.0)
         self.assertEqual(env.reward_lap, 100.0)
         self.assertEqual(env.reward_death, -50.0)
         self.assertEqual(env.reward_backward, -5.0)
+        self.assertEqual(env.reward_north, 3.0)
+        self.assertEqual(env.reward_south, -2.0)
 
     def test_action_space(self):
         env = FroggerEnv()
@@ -239,19 +245,19 @@ class TestFroggerEnv(unittest.TestCase):
         env.reset()
         env.game.obstacles = []
         _, reward, _, _ = env.step("NORTH")
-        # forward 10 + progress 1 + time +1.0 = 12.0
-        self.assertEqual(reward, 12.0)
+        # forward 20 * progress 1 + north 2 + time +1.0 = 23.0
+        self.assertEqual(reward, 23.0)
 
     def test_reward_no_double_forward(self):
         env = FroggerEnv()
         env.reset()
         env.game.obstacles = []
-        _, r1, _, _ = env.step("NORTH")   # y=0 -> y=1, forward +10 + progress +1 + time +1.0
-        _, r2, _, _ = env.step("SOUTH")   # y=1 -> y=0, backward -2 + time +1.0
-        _, r3, _, _ = env.step("NORTH")   # y=0 -> y=1, no extra forward + time +1.0
-        self.assertEqual(r1, 12.0)
-        self.assertEqual(r2, -1.0)
-        self.assertEqual(r3, 1.0)
+        _, r1, _, _ = env.step("NORTH")   # y=0 -> y=1, forward 20*1 + north 2 + time +1.0 = 23.0
+        _, r2, _, _ = env.step("SOUTH")   # y=1 -> y=0, backward -2 + south -1 + time +1.0 = -2.0
+        _, r3, _, _ = env.step("NORTH")   # y=0 -> y=1, no extra forward (best_y already 1) + north 2 + time +1.0 = 3.0
+        self.assertEqual(r1, 23.0)
+        self.assertEqual(r2, -2.0)
+        self.assertEqual(r3, 3.0)
 
     def test_reward_backward(self):
         env = FroggerEnv()
@@ -259,7 +265,8 @@ class TestFroggerEnv(unittest.TestCase):
         env.game.obstacles = []
         env.step("NORTH")  # y=0 -> y=1
         _, reward, _, _ = env.step("SOUTH")
-        self.assertEqual(reward, -1.0)
+        # backward -2 + south -1 + time +1.0 = -2.0
+        self.assertEqual(reward, -2.0)
 
     def test_reward_checkpoint(self):
         env = FroggerEnv()
@@ -267,10 +274,10 @@ class TestFroggerEnv(unittest.TestCase):
         env.game.obstacles = []
         for _ in range(3):
             env.step("NORTH")
-        # 4th move reaches y=4 (checkpoint). max_y is reset to 0 by checkpoint logic,
-        # so no forward/progress reward is awarded for this step.
+        # 4th move reaches y=4 (checkpoint).
+        # forward 20 * progress 1 + checkpoint 100 + north 2 + time +1.0 = 123.0
         _, reward, _, _ = env.step("NORTH")
-        self.assertEqual(reward, 51.0)
+        self.assertEqual(reward, 123.0)
 
     def test_reward_lap(self):
         env = FroggerEnv()
@@ -278,10 +285,10 @@ class TestFroggerEnv(unittest.TestCase):
         env.game.obstacles = []
         for _ in range(7):
             env.step("NORTH")
-        # 8th move reaches y=8 (lap completion). max_y is reset to 0 by lap logic,
-        # so no forward/progress reward is awarded for this step.
+        # 8th move reaches y=8 (lap completion).
+        # lap 200 + north 2 + time +1.0 = 203.0 (frog_y resets to 0, so no forward progress)
         _, reward, _, _ = env.step("NORTH")
-        self.assertEqual(reward, 101.0)
+        self.assertEqual(reward, 203.0)
 
     def test_reward_death(self):
         env = FroggerEnv()
@@ -382,8 +389,8 @@ class TestFroggerEnv(unittest.TestCase):
         env.reset()
         env.game.obstacles = []
         _, reward, _, _ = env.step("NORTH")
-        # forward 5 + progress 1 + time +1.0 = 7.0
-        self.assertEqual(reward, 7.0)
+        # forward 5 * progress 1 + north 2 + time +1.0 = 8.0
+        self.assertEqual(reward, 8.0)
 
         env.reset()
         env.game.obstacles = []
@@ -428,6 +435,44 @@ class TestFroggerEnv(unittest.TestCase):
         env.step("NORTH")
         # Should have 4 cooldown ticks + 1 final update = 5 calls
         self.assertEqual(call_count[0], 5)
+
+    def test_reward_north_incentive(self):
+        env = FroggerEnv()
+        env.reset()
+        env.game.obstacles = []
+        _, reward, _, _ = env.step("NORTH")
+        # Should include the north bonus
+        self.assertEqual(reward, 23.0)  # 20 forward + 2 north + 1 time
+
+    def test_reward_south_incentive(self):
+        env = FroggerEnv()
+        env.reset()
+        env.game.obstacles = []
+        env.step("NORTH")  # y=0 -> y=1
+        _, reward, _, _ = env.step("SOUTH")
+        # Should include the south penalty
+        self.assertEqual(reward, -2.0)  # -2 backward + -1 south + 1 time
+
+    def test_best_y_reset(self):
+        env = FroggerEnv()
+        env.reset()
+        env.game.obstacles = []
+        self.assertEqual(env._best_y, 0)
+        env.step("NORTH")
+        self.assertEqual(env._best_y, 1)
+        env.reset()
+        self.assertEqual(env._best_y, 0)
+
+    def test_directional_incentive_east_west(self):
+        env = FroggerEnv()
+        env.reset()
+        env.game.obstacles = []
+        _, reward, _, _ = env.step("EAST")
+        # EAST has no directional incentive, only time
+        self.assertEqual(reward, 1.0)
+        _, reward, _, _ = env.step("WEST")
+        # WEST has no directional incentive, only time
+        self.assertEqual(reward, 1.0)
 
 
 if __name__ == "__main__":

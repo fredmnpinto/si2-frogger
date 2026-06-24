@@ -286,7 +286,7 @@ class TrainingOrchestrator:
         return total_reward, steps, avg_loss, max_y, laps_completed, steps_per_lap
 
     def _evaluate(self) -> dict[str, float]:
-        """Run an evaluation over multiple episodes with epsilon=0.
+        """Run an evaluation over multiple episodes with epsilon=0.05.
 
         Returns:
             Dictionary with evaluation statistics including mean score,
@@ -307,7 +307,7 @@ class TrainingOrchestrator:
             steps_at_lap_start = 0
 
             while not done and steps < max_total_steps:
-                action = self.trainer.select_action(state_tensor, epsilon=0.0)
+                action = self.trainer.select_action(state_tensor, epsilon=0.05)
                 next_state, reward, done, info = self.env.step(action)
 
                 # Track lap completion and reset lap timer
@@ -451,7 +451,7 @@ class TrainingOrchestrator:
             if self._eval_message is not None:
                 eval_panel = Panel(
                     self._eval_message,
-                    title="[bold green]Evaluation (ε=0)",
+                    title="[bold green]Evaluation (ε=0.05)",
                     border_style="green",
                     padding=(0, 1),
                 )

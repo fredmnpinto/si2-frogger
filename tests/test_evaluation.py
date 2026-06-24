@@ -701,6 +701,7 @@ class TestCLIParsing(unittest.TestCase):
         self.assertEqual(config.device, "auto")
         self.assertEqual(config.max_steps_per_lap, 200)
         self.assertEqual(config.max_total_steps, 2000)
+        self.assertEqual(config.epsilon, 0.05)
 
     def test_custom_args(self):
         config = parse_args([
@@ -711,6 +712,7 @@ class TestCLIParsing(unittest.TestCase):
             "--device", "cpu",
             "--max-steps-per-lap", "150",
             "--max-total-steps", "1000",
+            "--epsilon", "0.0",
         ])
         self.assertEqual(config.n_episodes, 50)
         self.assertEqual(config.seed, 42)
@@ -718,10 +720,23 @@ class TestCLIParsing(unittest.TestCase):
         self.assertEqual(config.device, "cpu")
         self.assertEqual(config.max_steps_per_lap, 150)
         self.assertEqual(config.max_total_steps, 1000)
+        self.assertEqual(config.epsilon, 0.0)
 
     def test_model_required(self):
         with self.assertRaises(SystemExit):
             parse_args([])
+
+    def test_epsilon_default(self):
+        config = parse_args(["--model", "checkpoints/best.pt"])
+        self.assertEqual(config.epsilon, 0.05)
+
+    def test_epsilon_custom(self):
+        config = parse_args(["--model", "checkpoints/best.pt", "--epsilon", "0.0"])
+        self.assertEqual(config.epsilon, 0.0)
+
+    def test_epsilon_training_match(self):
+        config = parse_args(["--model", "checkpoints/best.pt", "--epsilon", "0.01"])
+        self.assertEqual(config.epsilon, 0.01)
 
 
 class TestMainEntryPoint(unittest.TestCase):
@@ -854,6 +869,7 @@ class TestEvaluationConfig(unittest.TestCase):
         self.assertEqual(config.device, "auto")
         self.assertEqual(config.max_steps_per_lap, 200)
         self.assertEqual(config.max_total_steps, 2000)
+        self.assertEqual(config.epsilon, 0.05)
 
     def test_custom_values(self):
         config = EvaluationConfig(
@@ -864,6 +880,7 @@ class TestEvaluationConfig(unittest.TestCase):
             device="cpu",
             max_steps_per_lap=150,
             max_total_steps=1000,
+            epsilon=0.0,
         )
         self.assertEqual(config.n_episodes, 50)
         self.assertEqual(config.seed, 123)
@@ -871,6 +888,15 @@ class TestEvaluationConfig(unittest.TestCase):
         self.assertEqual(config.device, "cpu")
         self.assertEqual(config.max_steps_per_lap, 150)
         self.assertEqual(config.max_total_steps, 1000)
+        self.assertEqual(config.epsilon, 0.0)
+
+    def test_epsilon_default(self):
+        config = EvaluationConfig(model_path="test.pt")
+        self.assertEqual(config.epsilon, 0.05)
+
+    def test_epsilon_custom(self):
+        config = EvaluationConfig(model_path="test.pt", epsilon=0.0)
+        self.assertEqual(config.epsilon, 0.0)
 
 
 if __name__ == "__main__":

@@ -36,6 +36,7 @@ def main() -> int:
             seed=config.seed,
             max_steps_per_lap=config.max_steps_per_lap,
             max_total_steps=config.max_total_steps,
+            epsilon=config.epsilon,
         )
     except (FileNotFoundError, RuntimeError) as exc:
         print(f"Error loading checkpoint: {exc}", file=sys.stderr)

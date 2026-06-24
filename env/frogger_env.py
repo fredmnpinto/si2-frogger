@@ -55,13 +55,15 @@ class FroggerEnv:
     def __init__(
         self,
         seed: int | None = None,
-        reward_forward: float = 10.0,
-        reward_checkpoint: float = 50.0,
-        reward_lap: float = 100.0,
+        reward_forward: float = 20.0,
+        reward_checkpoint: float = 100.0,
+        reward_lap: float = 200.0,
         reward_death: float = -50.0,
         reward_backward: float = -2.0,
         reward_time: float = +1.0,
         reward_stay: float = -0.5,
+        reward_north: float = 2.0,
+        reward_south: float = -1.0,
     ) -> None:
         """Create a new ``FroggerEnv``.
 
@@ -74,6 +76,8 @@ class FroggerEnv:
             reward_backward: Penalty for moving backward.
             reward_time: Small survival bonus every step to reward staying alive.
             reward_stay: Penalty for staying still to discourage idle behaviour.
+            reward_north: Bonus for moving north.
+            reward_south: Penalty for moving south.
         """
         self.game = Frogger(width=11, height=9, fps=30)
         self._dt = 1.0 / self.game.fps
@@ -92,6 +96,11 @@ class FroggerEnv:
         self.reward_backward = reward_backward
         self.reward_time = reward_time
         self.reward_stay = reward_stay
+        self.reward_north = reward_north
+        self.reward_south = reward_south
+
+        # Track best y reached this episode (for progress-based rewards)
+        self._best_y = 0
 
         if seed is not None:
             self.seed(seed)
@@ -141,6 +150,7 @@ class FroggerEnv:
         self._prev_frog_y = self.game.frog_y
         self._prev_frog_x = self.game.frog_x
         self._max_y_reached = 0
+        self._best_y = 0
         self._laps_completed = 0
         self._steps_at_lap_start = 0
         return self.game.get_state()
@@ -273,10 +283,11 @@ class FroggerEnv:
         """
         reward = self.reward_time  # Small survival bonus every step
 
-        # Forward progress into a new lane.
-        progress = self.game.max_y_reached_in_checkpoint - prev_max_y
-        if progress > 0:
-            reward += self.reward_forward + progress
+        # Forward progress into a new lane (only reward NEW best y to prevent farming)
+        if self.game.frog_y > self._best_y:
+            progress = self.game.frog_y - self._best_y
+            reward += self.reward_forward * progress
+            self._best_y = self.game.frog_y
 
         # Backward movement (only if no lap was completed, because a lap
         # resets the frog to the start lane).
@@ -294,5 +305,11 @@ class FroggerEnv:
         # Penalty for staying still.
         if action == "STAY":
             reward += self.reward_stay
+
+        # Directional incentives
+        if action == "NORTH":
+            reward += self.reward_north
+        elif action == "SOUTH":
+            reward += self.reward_south
 
         return reward

@@ -18,6 +18,7 @@ DEFAULT_OUTPUT_DIR: str = "results"
 DEFAULT_DEVICE: str = "auto"
 DEFAULT_MAX_STEPS_PER_LAP: int = 200
 DEFAULT_MAX_TOTAL_STEPS: int = 2000
+DEFAULT_EPSILON: float = 0.05
 
 
 @dataclass
@@ -32,6 +33,7 @@ class EvaluationConfig:
         device: Torch device string ("auto", "cpu", or "cuda").
         max_steps_per_lap: Maximum steps allowed without completing a lap.
         max_total_steps: Absolute maximum steps per episode.
+        epsilon: Epsilon for epsilon-greedy evaluation.
     """
 
     n_episodes: int = DEFAULT_N_EPISODES
@@ -41,6 +43,7 @@ class EvaluationConfig:
     device: str = DEFAULT_DEVICE
     max_steps_per_lap: int = DEFAULT_MAX_STEPS_PER_LAP
     max_total_steps: int = DEFAULT_MAX_TOTAL_STEPS
+    epsilon: float = DEFAULT_EPSILON
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -96,6 +99,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_MAX_TOTAL_STEPS,
         help=f"Absolute maximum steps per episode (default: {DEFAULT_MAX_TOTAL_STEPS}).",
     )
+    parser.add_argument(
+        "--epsilon",
+        type=float,
+        default=DEFAULT_EPSILON,
+        help=f"Epsilon for epsilon-greedy evaluation (default: {DEFAULT_EPSILON}). "
+             "Use 0.0 for pure greedy, 0.01 to match training, or 0.05 for exploration.",
+    )
 
     return parser
 
@@ -120,4 +130,5 @@ def parse_args(args: Optional[List[str]] = None) -> EvaluationConfig:
         device=namespace.device,
         max_steps_per_lap=namespace.max_steps_per_lap,
         max_total_steps=namespace.max_total_steps,
+        epsilon=namespace.epsilon,
     )
