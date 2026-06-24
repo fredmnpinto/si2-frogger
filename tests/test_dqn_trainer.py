@@ -296,6 +296,50 @@ class TestTrainingStep(unittest.TestCase):
         self.assertIsNotNone(loss2)
         self.assertNotEqual(loss1, loss2)
 
+    def test_double_dqn_uses_policy_for_selection_target_for_evaluation(self):
+        """Verify Double DQN: policy net selects action, target net evaluates it."""
+        trainer = DQNTrainer()
+        self._fill_buffer(trainer, n=100)
+
+        # Set policy net to always select action 0
+        # Set target net to have very different values per action
+        with torch.no_grad():
+            for p in trainer.policy_net.parameters():
+                p.fill_(0.0)
+            # Make target net output [100, 0, 0, 0, 0] for all inputs
+            for name, p in trainer.target_net.named_parameters():
+                if "weight" in name:
+                    p.fill_(0.0)
+                    # Bias of last layer controls output values
+                    if p.shape[0] == 5:
+                        p[0, :].fill_(100.0)
+                elif "bias" in name:
+                    p.fill_(0.0)
+                    if p.shape[0] == 5:
+                        p[0] = 100.0
+
+        trainer.step_count = trainer.config.update_frequency - 1
+        loss1 = trainer.train_step()
+
+        # Now change policy net to always select action 1
+        with torch.no_grad():
+            for name, p in trainer.policy_net.named_parameters():
+                if "weight" in name and p.shape[0] == 5:
+                    p.fill_(0.0)
+                    p[1, :].fill_(1.0)
+                elif "bias" in name and p.shape[0] == 5:
+                    p.fill_(0.0)
+                    p[1] = 1.0
+
+        trainer.step_count = trainer.config.update_frequency - 1
+        loss2 = trainer.train_step()
+
+        self.assertIsNotNone(loss1)
+        self.assertIsNotNone(loss2)
+        # Loss should differ because policy net now selects a different action
+        # which gets evaluated to a different Q-value by the target net
+        self.assertNotEqual(loss1, loss2)
+
 
 class TestCheckpointSaveLoad(unittest.TestCase):
     """Tests for checkpoint save and load functionality."""

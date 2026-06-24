@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import signal
+import statistics
 import sys
 import time
 from typing import Any, Dict, Optional
@@ -120,6 +121,7 @@ class TrainingOrchestrator:
 
         self._episode = 0
         self._best_score = float("-inf")
+        self._best_episode = 0
         self._best_laps = 0
         self._best_steps = 0
         self._best_steps_per_lap = float("inf")  # Lower is better
@@ -127,10 +129,25 @@ class TrainingOrchestrator:
         self._emergency_saved = False
         self.high_score_tracker = HighScoreTracker(max_entries=3)
 
+        # Stashed latest-episode data for the live metrics panel
+        self._last_reward = 0.0
+        self._last_length = 0
+        self._last_max_y = 0
+        self._last_laps = 0
+
         # Banner state for Rich Live display
         self._banner_message: Optional[str] = None
         self._banner_time: float = 0.0
         self._banner_duration: float = 8.0  # Show banner for 8 seconds
+
+        # Evaluation result display state
+        self._eval_message: Optional[str] = None
+
+        # Running window for recent episode statistics
+        self._window_size = 100
+        self._recent_rewards: list[float] = []
+        self._recent_lengths: list[int] = []
+        self._recent_laps: list[int] = []
 
         # Seed if requested
         if config.seed is not None:
@@ -182,6 +199,29 @@ class TrainingOrchestrator:
             Current epsilon value.
         """
         return self.trainer.get_epsilon(self.trainer.step_count)
+
+    def _get_recent_stats(self) -> dict[str, float]:
+        """Compute statistics over the last window of episodes.
+
+        Returns:
+            Dictionary with mean reward, median reward, standard deviation,
+            mean length, and lap rate over the recent window.
+        """
+        if not self._recent_rewards:
+            return {
+                "mean_reward": 0.0,
+                "median_reward": 0.0,
+                "std_reward": 0.0,
+                "mean_length": 0.0,
+                "avg_laps": 0.0,
+            }
+        return {
+            "mean_reward": statistics.mean(self._recent_rewards),
+            "median_reward": statistics.median(self._recent_rewards),
+            "std_reward": statistics.stdev(self._recent_rewards) if len(self._recent_rewards) > 1 else 0.0,
+            "mean_length": statistics.mean(self._recent_lengths),
+            "avg_laps": float(statistics.mean(self._recent_laps)),
+        }
 
     def _run_episode(self) -> tuple[float, int, Optional[float], int, int, float]:
         """Run a single training episode.
@@ -250,13 +290,15 @@ class TrainingOrchestrator:
         steps_per_lap = steps / laps_completed if laps_completed > 0 else 0.0
         return total_reward, steps, avg_loss, max_y, laps_completed, steps_per_lap
 
-    def _evaluate(self) -> float:
+    def _evaluate(self) -> dict[str, float]:
         """Run an evaluation over multiple episodes with epsilon=0.
 
         Returns:
-            Mean total reward over the evaluation episodes.
+            Dictionary with evaluation statistics including mean score,
+            standard deviation, min, max, and lap rate.
         """
         scores: list[float] = []
+        laps_list: list[int] = []
         max_steps_per_lap = self.config.max_steps_per_lap
         max_total_steps = self.config.max_total_steps
 
@@ -289,9 +331,15 @@ class TrainingOrchestrator:
                 steps += 1
 
             scores.append(total_reward)
+            laps_list.append(laps_completed)
 
-        mean_score = sum(scores) / len(scores) if scores else 0.0
-        return mean_score
+        return {
+            "mean_score": sum(scores) / len(scores) if scores else 0.0,
+            "std_score": statistics.stdev(scores) if len(scores) > 1 else 0.0,
+            "min_score": min(scores) if scores else 0.0,
+            "max_score": max(scores) if scores else 0.0,
+            "avg_laps": float(statistics.mean(laps_list)) if laps_list else 0.0,
+        }
 
     def run(self) -> Dict[str, Any]:
         """Run the full training loop.
@@ -330,27 +378,18 @@ class TrainingOrchestrator:
             TaskProgressColumn(),
             TextColumn("•"),
             SmoothedTimeRemainingColumn(smoothing_factor=0.05),
-            TextColumn("• EPS: {task.fields[epsilon]:.3f}"),
-            TextColumn("• Best: {task.fields[best_score]:.1f}"),
-            TextColumn("• Reward: {task.fields[reward]:.1f}"),
-            TextColumn("• Laps: {task.fields[laps]}"),
-            TextColumn("• MaxY: {task.fields[max_y]}"),
         )
 
         task_id = progress.add_task(
             "training",
             total=self.config.episodes,
             completed=self._episode,
-            epsilon=self._get_current_epsilon(),
-            best_score=self._best_score,
-            reward=0.0,
-            laps=0,
-            max_y=0,
         )
 
-        # Create a group that combines progress + optional banner + high score table
+        # Create a group that combines progress + optional banner + metrics panel + eval + high score table
         def render_display():
             from rich.panel import Panel
+            from rich.text import Text
 
             elements = [progress]
 
@@ -363,6 +402,78 @@ class TrainingOrchestrator:
                 )
                 elements.append(banner_panel)
 
+            # ── Vertical Training Metrics Panel ──
+            stats = self._get_recent_stats()
+            epsilon = self._get_current_epsilon()
+
+            # Build metrics lines
+            metrics_lines: list[str] = []
+
+            # Episode / Progress
+            metrics_lines.append(
+                f"[bold]Episode:[/bold]   {self._episode} / {self.config.episodes}"
+            )
+
+            # Epsilon
+            metrics_lines.append(
+                f"[bold]Epsilon:[/bold]   {epsilon:.3f}"
+            )
+
+            # Current episode (only if we have data)
+            if self._episode > 0:
+                # We need the most recent episode data. Since _run_episode
+                # returns values that are consumed immediately, we stash the
+                # latest values in instance variables during the loop.
+                cur_reward = getattr(self, "_last_reward", 0.0)
+                cur_laps = getattr(self, "_last_laps", 0)
+                cur_max_y = getattr(self, "_last_max_y", 0)
+                cur_length = getattr(self, "_last_length", 0)
+                metrics_lines.append(
+                    f"[bold]Current:[/bold]   Reward={cur_reward:+.1f}  Laps={cur_laps}  Y={cur_max_y}  Len={cur_length}"
+                )
+
+            # Recent 100 stats
+            if stats["mean_reward"] != 0.0 or self._episode > 0:
+                mean_str = f"{stats['mean_reward']:+.1f}"
+                med_str = f"{stats['median_reward']:+.1f}"
+                std_str = f"{stats['std_reward']:.1f}"
+                avg_laps_str = f"{stats['avg_laps']:.1f}"
+                avg_len_str = f"{stats['mean_length']:.1f}"
+                metrics_lines.append(
+                    f"[bold]Recent100:[/bold] Mean={mean_str}  Med={med_str}  σ={std_str}"
+                )
+                metrics_lines.append(
+                    f"            AvgLaps={avg_laps_str}  AvgLen={avg_len_str}"
+                )
+
+            # Best performance
+            if self._best_score > float("-inf"):
+                best_ep = getattr(self, "_best_episode", 0)
+                best_laps = getattr(self, "_best_laps", 0)
+                metrics_lines.append(
+                    f"[bold]Best:[/bold]      {self._best_score:.1f} at ep {best_ep} ({best_laps} laps)"
+                )
+
+            metrics_text = Text.from_markup("\n".join(metrics_lines))
+            metrics_panel = Panel(
+                metrics_text,
+                title="[bold cyan]Training Metrics",
+                border_style="cyan",
+                padding=(0, 1),
+                width=70,
+            )
+            elements.append(metrics_panel)
+
+            # Evaluation results panel (shown temporarily after evaluation)
+            if self._eval_message is not None:
+                eval_panel = Panel(
+                    self._eval_message,
+                    title="[bold green]Evaluation (ε=0)",
+                    border_style="green",
+                    padding=(0, 1),
+                )
+                elements.append(eval_panel)
+
             table = self.high_score_tracker.get_table()
             elements.append(table)
 
@@ -373,6 +484,12 @@ class TrainingOrchestrator:
                 for episode in range(self._episode + 1, self.config.episodes + 1):
                     self._episode = episode
                     total_reward, length, loss, max_y, laps, steps_per_lap = self._run_episode()
+
+                    # Stash latest episode data for the metrics panel
+                    self._last_reward = total_reward
+                    self._last_length = length
+                    self._last_max_y = max_y
+                    self._last_laps = laps
 
                     # Check if new best
                     if total_reward > self._best_score:
@@ -385,6 +502,7 @@ class TrainingOrchestrator:
                         self._best_laps = laps
                         self._best_steps = length
                         self._best_steps_per_lap = steps_per_lap
+                        self._best_episode = episode
 
                         # Log the new best! (only after episode 100 to reduce early noise)
                         if self.logger is not None and episode >= 100:
@@ -412,6 +530,15 @@ class TrainingOrchestrator:
                                 steps_per_lap=steps_per_lap,
                             )
 
+                    # Update running window statistics
+                    self._recent_rewards.append(total_reward)
+                    self._recent_lengths.append(length)
+                    self._recent_laps.append(laps)
+                    if len(self._recent_rewards) > self._window_size:
+                        self._recent_rewards.pop(0)
+                        self._recent_lengths.pop(0)
+                        self._recent_laps.pop(0)
+
                     # Clear banner after duration
                     if self._banner_message is not None and time.time() - self._banner_time >= self._banner_duration:
                         self._banner_message = None
@@ -422,18 +549,10 @@ class TrainingOrchestrator:
                         laps, steps_per_lap,
                     )
 
-                    # Update progress bar
-                    progress.update(
-                        task_id,
-                        advance=1,
-                        epsilon=self._get_current_epsilon(),
-                        best_score=self._best_score,
-                        reward=total_reward,
-                        laps=laps,
-                        max_y=max_y,
-                    )
+                    # Update progress bar (minimal fields)
+                    progress.update(task_id, advance=1)
 
-                    # Refresh live display (triggers re-render with updated table)
+                    # Refresh live display (triggers re-render with updated metrics panel)
                     live.update(render_display())
 
                     # Periodic checkpoint
@@ -444,16 +563,26 @@ class TrainingOrchestrator:
                             self._best_score,
                         )
 
-                    # Periodic evaluation and best-model tracking (silent)
+                    # Periodic evaluation and best-model tracking
                     if episode % self.config.eval_freq == 0:
-                        eval_score = self._evaluate()
+                        eval_stats = self._evaluate()
+                        eval_mean = eval_stats["mean_score"]
                         self.checkpoint_manager.save_best(
                             episode,
                             self._get_current_epsilon(),
-                            eval_score,
+                            eval_mean,
                         )
-                        if eval_score > self._best_score:
-                            self._best_score = eval_score
+                        if eval_mean > self._best_score:
+                            self._best_score = eval_mean
+
+                        # Display evaluation results
+                        self._eval_message = (
+                            f"Mean: {eval_stats['mean_score']:.1f} │ "
+                            f"Std: {eval_stats['std_score']:.1f} │ "
+                            f"Min: {eval_stats['min_score']:.1f} │ "
+                            f"Max: {eval_stats['max_score']:.1f} │ "
+                            f"AvgLaps: {eval_stats['avg_laps']:.1f}"
+                        )
 
         except RuntimeError as exc:
             if "Non-finite loss" in str(exc):

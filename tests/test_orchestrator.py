@@ -298,13 +298,23 @@ class TestTrainingOrchestrator(unittest.TestCase):
             self.assertTrue(os.path.isfile(emergency_path))
             logger.close()
 
-    def test_evaluate_returns_mean_score(self):
+    def test_evaluate_returns_dict(self):
         config = TrainingConfig(episodes=2, eval_freq=10)
         env = MockEnv(max_steps=3)
         trainer = DQNTrainer(DQNConfig(hidden_size=16))
         orch = self._make_orchestrator(config, env=env, trainer=trainer)
-        score = orch._evaluate()
-        self.assertIsInstance(score, float)
+        result = orch._evaluate()
+        self.assertIsInstance(result, dict)
+        self.assertIn("mean_score", result)
+        self.assertIn("std_score", result)
+        self.assertIn("min_score", result)
+        self.assertIn("max_score", result)
+        self.assertIn("avg_laps", result)
+        self.assertIsInstance(result["mean_score"], float)
+        self.assertIsInstance(result["std_score"], float)
+        self.assertIsInstance(result["min_score"], float)
+        self.assertIsInstance(result["max_score"], float)
+        self.assertIsInstance(result["avg_laps"], float)
 
     def test_run_returns_summary(self):
         config = TrainingConfig(episodes=2, eval_freq=10)
@@ -481,12 +491,92 @@ class TestTrainingOrchestrator(unittest.TestCase):
         env = MockEnvWithLaps(never_done=True)
         trainer = DQNTrainer(DQNConfig(hidden_size=16))
         orch = self._make_orchestrator(config, env=env, trainer=trainer)
-        score = orch._evaluate()
+        result = orch._evaluate()
         # Eval should also respect max_steps_per_lap:
         # steps variable ends at 4 (truncated when steps_since_lap >= 4),
         # but env.step() was called one extra time before the break.
-        self.assertEqual(score, 4.0)
+        self.assertEqual(result["mean_score"], 4.0)
         self.assertEqual(env._step_count, 5)
+
+    def test_get_recent_stats_empty(self):
+        config = TrainingConfig(episodes=2)
+        orch = self._make_orchestrator(config)
+        stats = orch._get_recent_stats()
+        self.assertEqual(stats["mean_reward"], 0.0)
+        self.assertEqual(stats["median_reward"], 0.0)
+        self.assertEqual(stats["std_reward"], 0.0)
+        self.assertEqual(stats["mean_length"], 0.0)
+        self.assertEqual(stats["avg_laps"], 0.0)
+
+    def test_get_recent_stats_computation(self):
+        config = TrainingConfig(episodes=2)
+        orch = self._make_orchestrator(config)
+        orch._recent_rewards = [10.0, 20.0, 30.0]
+        orch._recent_lengths = [5, 10, 15]
+        orch._recent_laps = [0, 1, 0]
+        stats = orch._get_recent_stats()
+        self.assertAlmostEqual(stats["mean_reward"], 20.0)
+        self.assertEqual(stats["median_reward"], 20.0)
+        self.assertGreater(stats["std_reward"], 0.0)
+        self.assertAlmostEqual(stats["mean_length"], 10.0)
+        self.assertAlmostEqual(stats["avg_laps"], 1.0 / 3)
+
+    def test_running_window_updates_during_training(self):
+        config = TrainingConfig(episodes=3, eval_freq=10)
+        env = MockEnv(max_steps=2)
+        trainer = DQNTrainer(DQNConfig(hidden_size=16))
+        orch = self._make_orchestrator(config, env=env, trainer=trainer)
+
+        mock_live, mock_progress = _make_rich_mocks()
+        with mock.patch("rich.live.Live", return_value=mock_live):
+            with mock.patch("rich.progress.Progress", return_value=mock_progress):
+                orch.run()
+
+        # After 3 episodes, window should have 3 entries
+        self.assertEqual(len(orch._recent_rewards), 3)
+        self.assertEqual(len(orch._recent_lengths), 3)
+        self.assertEqual(len(orch._recent_laps), 3)
+
+    def test_running_window_respects_window_size(self):
+        config = TrainingConfig(episodes=3, eval_freq=10)
+        env = MockEnv(max_steps=2)
+        trainer = DQNTrainer(DQNConfig(hidden_size=16))
+        orch = self._make_orchestrator(config, env=env, trainer=trainer)
+        orch._window_size = 2
+
+        mock_live, mock_progress = _make_rich_mocks()
+        with mock.patch("rich.live.Live", return_value=mock_live):
+            with mock.patch("rich.progress.Progress", return_value=mock_progress):
+                orch.run()
+
+        # Window size is 2, so only 2 entries should remain
+        self.assertEqual(len(orch._recent_rewards), 2)
+        self.assertEqual(len(orch._recent_lengths), 2)
+        self.assertEqual(len(orch._recent_laps), 2)
+
+    def test_eval_message_set_after_evaluation(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = TrainingConfig(
+                episodes=5, eval_freq=5, eval_episodes=2, log_dir=tmpdir
+            )
+            env = MockEnv(max_steps=2)
+            trainer = DQNTrainer(DQNConfig(hidden_size=16))
+            checkpoint_dir = os.path.join(tmpdir, "checkpoints")
+            cm = CheckpointManager(checkpoint_dir, 100, trainer)
+            orch = self._make_orchestrator(
+                config, env=env, trainer=trainer, checkpoint_manager=cm
+            )
+
+            mock_live, mock_progress = _make_rich_mocks()
+            with mock.patch("rich.live.Live", return_value=mock_live):
+                with mock.patch("rich.progress.Progress", return_value=mock_progress):
+                    orch.run()
+
+            # After episode 5, evaluation runs and sets _eval_message
+            self.assertIsNotNone(orch._eval_message)
+            self.assertIn("Mean:", orch._eval_message)
+            self.assertIn("Std:", orch._eval_message)
+            self.assertIn("AvgLaps:", orch._eval_message)
 
     def test_log_file_contains_laps_and_steps_per_lap(self):
         with tempfile.TemporaryDirectory() as tmpdir:
