@@ -1,10 +1,11 @@
 # SI2-Frogger DQN Agent Functional Specification
 
-> **Version**: 2.1.2 | **Date**: 2026-06-21 | **Author**: Documenter Agent | **Status**: Draft
+> **Version**: 2.2.0 | **Date**: 2026-06-24 | **Author**: Documenter Agent | **Status**: Draft
 
 ## Change Log
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.2.0 | 2026-06-24 | Documenter Agent | Updated spec to match current implementation: 5 actions (added STAY), 30-D state with 8 directional sensors, MLP 256x256 (~75K params), Rich Live display with high score tracker and achievement banner, per-lap (200) and total (2000) step limits, 5 plots (added steps_per_lap), updated reward function details, updated FR statuses (FR-002, FR-003, FR-006 Implemented; FR-004, FR-005 Draft), updated dependencies (added rich, removed tqdm). |
 | 2.1.2 | 2026-06-21 | Documenter Agent | FR-003 (Training Orchestration) marked as Implemented. TrainingOrchestrator with episode loop, tqdm progress bar, CheckpointManager with periodic saves/best model tracking/emergency recovery, TrainingLogger with console+CSV logging, TrainingConfig with CLI parser and JSON config support, visualization/plot.py with 4 plot types, DQNTrainer save/load checkpoint methods, CLI entry points, SIGINT handling, NaN/Inf detection. 176 tests passing, 99% coverage. Commit: `9d20902`. |
 | 2.1.1 | 2026-06-20 | Documenter Agent | FR-001 (Environment Wrapper) marked as Implemented. `env/__init__.py` and `env/frogger_env.py` created with `FroggerEnv` class wrapping `server.logic.Frogger`. All acceptance criteria checked off. 29 unit tests, 98% coverage. Commit: `4f5e292`. |
 | 2.1.0 | 2026-06-20 | Documenter Agent | Fixed granularity: consolidated 14 sub-function FRs into 6 User Goal-level FRs per IREB best practices. Moved state representation, reward function, and network architecture design decisions to Architecture section. Acceptance criteria now carry sub-function detail. |
@@ -70,8 +71,8 @@ The project starts with a fully functional Frogger game implementation:
 ### 2.2 Target State (To-Be)
 The project delivers a complete DQN-based RL system:
 - **Environment Wrapper**: A Gym-like wrapper (`FroggerEnv`) around `server/logic.Frogger` exposing `reset()`, `step(action)`, and state extraction
-- **State Representation**: Engineered feature vector or image-like representation capturing frog position, obstacle positions/speeds, and lane danger levels
-- **DQN Network**: PyTorch neural network approximating Q-values for 4 discrete actions (NORTH, SOUTH, EAST, WEST)
+- **State Representation**: 30-dimensional engineered feature vector capturing frog position, lives, checkpoint flag, per-lane obstacle distance/speed/width (6 lanes × 3), and 8 directional proximity sensors (N, S, E, W, NE, NW, SE, SW)
+- **DQN Network**: PyTorch MLP mapping state vectors to Q-values for 5 discrete actions (NORTH, SOUTH, EAST, WEST, STAY). Architecture: Input[30] → Linear(30, 256) + ReLU → Linear(256, 256) + ReLU → Linear(256, 5). ~75K parameters.
 - **Replay Buffer**: Fixed-size experience replay storing `(state, action, reward, next_state, done)` tuples
 - **Training Pipeline**: Offline training script importing `server/logic.py` directly, running thousands of episodes with epsilon-greedy exploration
 - **Target Network**: Separate target network updated periodically for training stability
@@ -95,11 +96,11 @@ The project delivers a complete DQN-based RL system:
 | ID | Title | Description | Priority (Must/Should/Could) | Source | Dependencies | Status |
 |----|-------|-------------|-------------------------------|--------|--------------|--------|
 | FR-001 | Environment Wrapper | The system shall provide a Gym-like wrapper around Frogger logic exposing reset(), step(), state extraction, reward computation, and cooldown handling | Must | project02.md, codebase | None | Implemented |
-| FR-002 | DQN Training System | The system shall implement a complete DQN algorithm including neural network, experience replay, epsilon-greedy exploration, target network updates, loss computation, and optimizer | Must | project02.md, DQN paper | FR-001 | Draft |
+| FR-002 | DQN Training System | The system shall implement a complete DQN algorithm including neural network, experience replay, epsilon-greedy exploration, target network updates, loss computation, and optimizer | Must | project02.md, DQN paper | FR-001 | Implemented |
 | FR-003 | Training Orchestration | The system shall run a training loop over N episodes with logging, checkpointing, and visualization | Must | project02.md | FR-002 | Implemented |
 | FR-004 | Inference Agent | The system shall provide a DQNAgent subclassing BaseAgent that loads trained weights and plays via WebSocket | Must | project02.md, codebase | FR-003 | Draft |
 | FR-005 | Evaluation and Benchmarking | The system shall evaluate trained agents over multiple episodes and compute statistics vs DummyAgent baseline | Must | project02.md | FR-004 | Draft |
-| FR-006 | Hyperparameter Configuration | The system shall expose all hyperparameters via config file or CLI | Should | project02.md | FR-003 | Draft |
+| FR-006 | Hyperparameter Configuration | The system shall expose all hyperparameters via config file or CLI | Should | project02.md | FR-003 | Implemented |
 
 ### Acceptance Criteria
 
@@ -111,7 +112,7 @@ The project delivers a complete DQN-based RL system:
 **Acceptance Criteria**:
 - [x] `FroggerEnv` class wraps `server.logic.Frogger` without modifying `logic.py`
 - [x] `reset()` returns initial state and resets the underlying `Frogger` game
-- [x] `step(action)` accepts action string ("NORTH", "SOUTH", "EAST", "WEST"), advances game by one or more ticks, and returns `(next_state, reward, done, info)`
+- [x] `step(action)` accepts action string ("NORTH", "SOUTH", "EAST", "WEST", "STAY") or action index (0-4), advances game by one or more ticks, and returns `(next_state, reward, done, info)`
 - [x] `step()` handles the 5-frame movement cooldown by either stepping multiple ticks or waiting appropriately
 - [x] Environment tracks episode length and exposes it in `info`
 - [x] Environment is deterministic when seeded
@@ -123,22 +124,22 @@ The project delivers a complete DQN-based RL system:
 **Source**: project02.md, DQN paper (Mnih et al., 2015)
 **Dependencies**: FR-001
 **Acceptance Criteria**:
-- [ ] Network maps states to 4 Q-values (NORTH, SOUTH, EAST, WEST)
-- [ ] Network supports both CPU and CUDA execution
-- [ ] Forward pass completes in <10ms for a single state
-- [ ] Replay buffer stores tuples of `(state, action, reward, next_state, done)`
-- [ ] Replay buffer has configurable maximum capacity (default: 10,000 - 100,000)
-- [ ] `push()` adds transitions; when full, oldest transitions are overwritten
-- [ ] `sample(batch_size)` returns random minibatch without replacement using vectorized operations
-- [ ] Epsilon starts at `epsilon_start` (default: 1.0) and decays to `epsilon_end` (default: 0.01) over configurable schedule
-- [ ] With probability epsilon, a random valid action is selected; with probability (1 - epsilon), the action with highest Q-value is selected
-- [ ] Target network is a copy of the policy network, initialized identically
-- [ ] Hard update: target network copies policy network weights every N steps (default: every 1,000 steps); OR soft update via Polyak averaging (`tau * policy + (1-tau) * target`)
-- [ ] Target network is used for computing Q-targets in loss function, not for action selection
-- [ ] Loss is computed as Huber or MSE between predicted Q and target Q
-- [ ] Optimizer is Adam with configurable learning rate
-- [ ] Training updates occur every `update_frequency` steps (default: every 4 steps)
-**Status**: Draft
+- [x] Network maps states to 5 Q-values (NORTH, SOUTH, EAST, WEST, STAY)
+- [x] Network supports both CPU and CUDA execution
+- [x] Forward pass completes in <10ms for a single state
+- [x] Replay buffer stores tuples of `(state, action, reward, next_state, done)`
+- [x] Replay buffer has configurable maximum capacity (default: 100,000)
+- [x] `push()` adds transitions; when full, oldest transitions are overwritten
+- [x] `sample(batch_size)` returns random minibatch without replacement using vectorized operations
+- [x] Epsilon starts at `epsilon_start` (default: 1.0) and decays to `epsilon_end` (default: 0.01) over configurable schedule
+- [x] With probability epsilon, a random valid action is selected; with probability (1 - epsilon), the action with highest Q-value is selected
+- [x] Target network is a copy of the policy network, initialized identically
+- [x] Hard update: target network copies policy network weights every N steps (default: every 1,000 steps); soft update via Polyak averaging (`tau * policy + (1-tau) * target`) also supported
+- [x] Target network is used for computing Q-targets in loss function, not for action selection
+- [x] Loss is computed as Huber loss (SmoothL1Loss) between predicted Q and target Q
+- [x] Optimizer is Adam with configurable learning rate (default: 5e-4)
+- [x] Training updates occur every `update_frequency` steps (default: every 4 steps)
+**Status**: Implemented
 
 #### FR-003: Training Orchestration
 **Description**: The system shall run a training loop over N episodes with logging, checkpointing, and visualization.
@@ -148,8 +149,15 @@ The project delivers a complete DQN-based RL system:
 **Acceptance Criteria**:
 - [x] Training script runs for configurable number of episodes (default: 1,000+)
 - [x] Each episode: reset env, run until done, accumulate transitions, perform training updates
-- [x] Logs include: episode number, total reward, epsilon, loss, episode length, high score
-- [x] Logs are written to console and optionally to file (CSV or JSON)
+- [x] Logs include: episode number, total reward, epsilon, loss, episode length, high score, max_y, laps_completed, steps_per_lap
+- [x] Logs are written to CSV file; console output uses Rich Live display
+- [x] Rich Live display shows: episode count, percentage, bar, ETA (smoothed), EPS, Best score, Reward, Laps, MaxY
+- [x] High score tracker: In-place Rich table showing last 3 best episodes
+- [x] Achievement banner: Rich Panel showing "NEW BEST" for 8 seconds
+- [x] All updates happen in-place without scrolling
+- [x] Per-lap limit: 200 steps without completing a lap → episode ends
+- [x] Total limit: 2000 steps absolute max per episode
+- [x] Lap completion resets the per-lap timer
 - [x] Model weights saved every N episodes (configurable, default: every 100)
 - [x] Best model (highest evaluation score) is saved separately and never overwritten
 - [x] Checkpoint includes: policy network state dict, target network state dict, optimizer state dict, episode count, epsilon value, best score
@@ -158,7 +166,8 @@ The project delivers a complete DQN-based RL system:
 - [x] Plot 1: Episode rewards over time (smoothed with moving average)
 - [x] Plot 2: Loss curve over training steps
 - [x] Plot 3: Epsilon decay over episodes
-- [x] Plot 4: Evaluation score distribution (histogram or boxplot)
+- [x] Plot 4: Score distribution (histogram and boxplot)
+- [x] Plot 5: Steps per lap over time (smoothed with moving average)
 - [x] Plots are saved as PNG/SVG to `plots/` or `results/` directory
 - [x] Plot generation script is separate and can be run post-training
 **Status**: Implemented
@@ -198,12 +207,12 @@ The project delivers a complete DQN-based RL system:
 **Source**: project02.md
 **Dependencies**: FR-003
 **Acceptance Criteria**:
-- [ ] Configurable parameters: learning rate, gamma (discount factor), epsilon_start, epsilon_end, epsilon_decay, buffer_size, batch_size, target_update_freq, hidden_layer_sizes
-- [ ] Configuration loaded from JSON/YAML file or CLI arguments
-- [ ] Default values are sensible and documented
-- [ ] Multiple hyperparameter experiments can be run and compared
-- [ ] Hyperparameter values used for final model are documented in README.md
-**Status**: Draft
+- [x] Configurable parameters: learning_rate, gamma, epsilon_start, epsilon_end, epsilon_decay_steps, buffer_size, batch_size, target_update_freq, update_frequency, hidden_size, gradient_clip, device
+- [x] Configuration loaded from JSON file or CLI arguments (CLI overrides JSON)
+- [x] Default values are sensible and documented
+- [x] Multiple hyperparameter experiments can be run and compared
+- [x] Hyperparameter values used for final model are documented in README.md
+**Status**: Implemented
 
 ---
 
@@ -231,13 +240,13 @@ The project delivers a complete DQN-based RL system:
 |-----------|---------|-----------------|
 | FroggerEnv | Environment Wrapper | Wraps `server.logic.Frogger`; exposes Gym-like API (`reset`, `step`, `state extraction`); computes rewards; handles cooldown |
 | StateEncoder | State Representation | Converts raw game state (frog pos, obstacles) into fixed-size feature vector or image tensor |
-| DQNNetwork | Neural Network | PyTorch `nn.Module` mapping state tensors to Q-values for 4 actions |
+| DQNNetwork | Neural Network | PyTorch `nn.Module` mapping state tensors to Q-values for 5 actions |
 | ReplayBuffer | Experience Storage | Circular buffer storing transitions; supports uniform random sampling |
 | DQNTrainer | Training Orchestrator | Runs training loop: episode generation, epsilon decay, loss computation, backpropagation, checkpointing |
 | TargetNetwork | Stable Q-Target | Copy of DQNNetwork updated periodically; used for computing TD targets |
 | DQNAgent | Inference Agent | Subclasses `BaseAgent`; loads trained weights; selects greedy actions via WebSocket |
 | Evaluator | Performance Testing | Runs evaluation episodes, computes statistics, generates comparison tables |
-| Plotter | Visualization | Generates matplotlib plots: reward curves, loss curves, epsilon decay, score distributions |
+| Plotter | Visualization | Generates matplotlib plots: reward curves, loss curves, epsilon decay, score distributions, steps per lap |
 | ConfigManager | Hyperparameter Management | Loads hyperparameters from JSON/YAML/CLI; provides defaults |
 
 ### 5.2 Design Decisions
@@ -245,38 +254,48 @@ The project delivers a complete DQN-based RL system:
 The following design decisions are documented in the Architecture section (not as standalone functional requirements) because they are implementation choices that support the User Goal-level requirements:
 
 #### State Representation Design
-The StateEncoder component converts raw game state into a fixed-size representation suitable for neural network input. Key design choices:
-- **Fixed dimensions**: Representation must have fixed dimensions regardless of obstacle count (e.g., via grid occupancy, relative positions, or engineered features)
-- **Frog position**: Included as normalized or absolute coordinates
-- **Obstacle information**: Positions, speeds, and directions for relevant lanes
+The `StateEncoder` component converts raw game state into a fixed-size 30-dimensional feature vector. Key design choices:
+- **Fixed dimensions**: 30-D vector regardless of obstacle count
+- **Frog position**: Indices 0-1, normalized frog x and y coordinates
+- **Lives**: Index 2, normalized lives (0-1)
+- **Checkpoint flag**: Index 3, binary flag indicating whether the middle checkpoint has been reached
+- **Per-lane features**: Indices 4-21, 6 traffic lanes × 3 features each (distance to nearest obstacle, obstacle speed, obstacle width), all normalized
+- **Directional sensors**: Indices 22-29, 8 directional ray-casting sensors (N, S, E, W, NE, NW, SE, SW) returning normalized distance to nearest obstacle within range 3
 - **Performance**: State can be converted to PyTorch tensor in <1ms
 - **Documentation**: Representation dimensionality and encoding rationale must be documented in README.md
 - **Alternatives**: At least one alternative representation must be considered and documented (e.g., image-like vs. vector)
 
 #### Reward Function Design
-The reward function is implemented in the environment wrapper (not in game logic) to shape agent behavior. Key design choices:
-- **Positive rewards**: Forward progress (e.g., +1 per new lane), reaching checkpoints (+10/+20), completing laps
-- **Negative rewards**: Death/collision (e.g., -10), idle time (optional), moving backward (optional)
-- **Sparsity vs. density**: Design choice must be justified in README.md
+The reward function is implemented in the environment wrapper (`FroggerEnv`) to shape agent behavior. Key design choices:
+- **Forward progress**: +10 per new lane reached (plus progress amount)
+- **Checkpoint**: +50 for reaching the middle checkpoint
+- **Lap completion**: +100 for completing a full lap
+- **Death**: -10 for losing a life
+- **Time penalty**: -0.1 per step to encourage faster progress
+- **Stay penalty**: -0.5 for choosing STAY to discourage idle behaviour
+- **Backward movement**: -2 for moving backward (unless lap was just completed)
+- **Sparsity vs. density**: Dense reward shaping with small per-step penalties and larger event-based bonuses
 - **Clipping**: Reward clipping (e.g., [-1, 1]) must be considered and documented
 - **Documentation**: Reward function must be explicitly defined and documented in README.md
 
 #### Network Architecture Details
-The DQNNetwork component implements the neural network approximating the Q-function. Key design choices:
-- **Input**: Accepts state tensor from StateEncoder
-- **Output**: Q-values for [NORTH, SOUTH, EAST, WEST]
-- **Architecture**: Layer sizes and activation functions must be documented
-- **Parameter count**: Number of parameters must be documented in README.md
-- **Justification**: Architecture choice must be justified (e.g., MLP for vector states, CNN for image states)
-- **Device support**: Supports both CPU and CUDA execution
+The `DQNNetwork` component implements the neural network approximating the Q-function. Key design choices:
+- **Input**: Accepts state tensor of shape `(batch, 30)` from `StateEncoder`
+- **Output**: Q-values for [NORTH, SOUTH, EAST, WEST, STAY] — 5 discrete actions
+- **Architecture**: MLP with two hidden layers: `Input[30] → Linear(30, 256) + ReLU → Linear(256, 256) + ReLU → Linear(256, 5)`
+- **Parameter count**: ~75,000 parameters
+- **Loss function**: Huber loss (`nn.SmoothL1Loss`)
+- **Optimizer**: Adam with learning rate 5e-4
+- **Justification**: MLP is appropriate for the engineered 30-D vector state; CNN would be used for image-like states
+- **Device support**: Supports both CPU and CUDA execution with automatic fallback
 
 ### 5.3 Data Models
 
 #### Model: Transition
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| state | Tensor | Yes | Encoded state representation (shape depends on encoder) |
-| action | int | Yes | Action index: 0=NORTH, 1=SOUTH, 2=EAST, 3=WEST |
+| state | Tensor | Yes | Encoded state representation (shape: [30]) |
+| action | int | Yes | Action index: 0=NORTH, 1=SOUTH, 2=EAST, 3=WEST, 4=STAY |
 | reward | float | Yes | Scalar reward from reward function |
 | next_state | Tensor | Yes | Encoded next state |
 | done | bool | Yes | True if episode terminated (game_over or win) |
@@ -300,6 +319,8 @@ The DQNNetwork component implements the neural network approximating the Q-funct
 | std_score | float | Yes | Standard deviation of scores |
 | mean_length | float | Yes | Mean episode length (steps) |
 | mean_laps | float | Yes | Mean laps completed per episode |
+| laps_completed | int | Yes | Total laps completed across all evaluation episodes |
+| steps_per_lap | float | Yes | Mean steps per lap (lower is better) |
 
 ### 5.4 API Design
 
@@ -308,14 +329,14 @@ The DQNNetwork component implements the neural network approximating the Q-funct
 # FroggerEnv
 state = env.reset()                          # Returns initial encoded state
 next_state, reward, done, info = env.step(action)  # Returns transition tuple
-state_shape = env.observation_space          # Fixed shape of state vector
-n_actions = env.action_space                 # 4 (NORTH, SOUTH, EAST, WEST)
+state_shape = env.observation_space          # Fixed shape of state vector (30)
+n_actions = env.action_space                 # 5 (NORTH, SOUTH, EAST, WEST, STAY)
 ```
 
 #### DQN Network API
 ```python
 # DQNNetwork (PyTorch)
-q_values = model(state_tensor)               # Forward pass: returns [batch, 4] Q-values
+q_values = model(state_tensor)               # Forward pass: returns [batch, 5] Q-values
 ```
 
 #### Replay Buffer API
@@ -347,10 +368,12 @@ asyncio.run(agent.run())                     # Connects via WebSocket and plays
 
 ### 6.1 User Interface
 - **Command Line**: Training and evaluation scripts are CLI-based
-  - `python3 -m training.train --config config.json`
-  - `python3 -m evaluation.evaluate --model checkpoints/best.pt --episodes 100`
-  - `python3 -m visualization.plot --log logs/training.csv`
-  - `python3 -m agents.dqn_agent --model checkpoints/best.pt`
+  - `python -m training` — Run training with defaults (1000 episodes)
+  - `python -m training --episodes 2000 --seed 42` — Override episodes and seed
+  - `python -m training --config config.json` — Load hyperparameters from JSON
+  - `python -m training --resume checkpoint.pt` — Resume from checkpoint
+  - `python -m visualization.plot --log logs/training.csv --output plots/` — Generate plots post-training
+  - `python -m agents.dqn_agent --model checkpoints/best.pt` — Run inference agent (planned)
 - **Web Viewer**: Existing HTML5 Canvas viewer at `http://localhost:8765/` used to observe trained agent gameplay
 
 ### 6.2 External Integrations
@@ -360,6 +383,7 @@ asyncio.run(agent.run())                     # Connects via WebSocket and plays
 | server/logic.py | Offline training environment | Python objects | Direct import | Validate game state consistency |
 | matplotlib | Plot generation | PNG/SVG files | File I/O | Handle missing data gracefully |
 | PyTorch | Neural network training | Tensors | In-memory | CUDA fallback to CPU |
+| rich | Live console display, progress bars, tables | Text | In-memory | Graceful fallback to plain text |
 
 ### 6.3 Error Handling
 - **Import Errors**: If `server.logic` cannot be imported, raise clear error indicating training must run from repo root
@@ -415,7 +439,7 @@ asyncio.run(agent.run())                     # Connects via WebSocket and plays
 - **Training Mode**: Offline training via direct Python import of `server/logic.py` (not via WebSocket)
 - **Inference Mode**: Must use WebSocket via `BaseAgent` subclass
 - **Python Version**: 3.10+
-- **Dependencies**: PyTorch, numpy, matplotlib (plus existing `ai-game-framework`, `websockets`)
+- **Dependencies**: PyTorch, numpy, matplotlib, rich (plus existing `ai-game-framework`, `websockets`)
 - **Hardware**: Must run on standard laptop (CPU training acceptable; GPU optional but preferred)
 
 ---
