@@ -54,7 +54,7 @@ In a separate terminal (ensure the virtual environment is activated):
 
 ## Training
 
-The project includes a full DQN training pipeline for learning a Frogger agent. The implementation uses **Double DQN (DDQN)** to mitigate Q-value overestimation by decoupling action selection from action evaluation (van Hasselt et al., 2016).
+The project includes a full DQN training pipeline for learning a Frogger agent. The implementation uses **standard DQN** with experience replay and target networks for stable learning.
 
 ### Running Training
 
@@ -124,7 +124,7 @@ You can provide a JSON config file to override hyperparameters:
     "target_update_freq": 1000,
     "tau": 1.0,
     "update_frequency": 4,
-    "hidden_size": 128,
+    "hidden_size": 64,
     "gradient_clip": 1.0,
     "device": "auto"
   }
@@ -152,7 +152,7 @@ Evaluate a trained model against the random baseline:
 python -m evaluation --model checkpoints/best_model.pt
 ```
 
-By default, the evaluation runs **100 episodes** per agent (DQN and random) with **epsilon = 0** (pure exploitation) to measure the true policy performance. The random baseline provides a reference point for assessing whether the DQN agent has learned meaningful behavior.
+By default, the evaluation runs **100 episodes** per agent (DQN and random) with **epsilon = 0.05** (following DeepMind's evaluation protocol). For deterministic environments, use `--epsilon 0.0` to measure pure policy performance. The random baseline provides a reference point for assessing whether the DQN agent has learned meaningful behavior.
 
 You can also specify a custom epsilon value for evaluation:
 
